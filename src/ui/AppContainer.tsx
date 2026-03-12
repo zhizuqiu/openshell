@@ -162,7 +162,7 @@ export function AppContainer({ config }: AppContainerProps) {
   // 处理用户提交的指令并启动 AI 流响应
 
   // 取消当前任务：停止正在运行的命令并重置状态
-  const cancelCurrentTask = () => {
+  const cancelCurrentTask = async () => {
     if (cancelMessageAddedRef.current) return;
     cancelMessageAddedRef.current = true;
 
@@ -186,7 +186,23 @@ export function AppContainer({ config }: AppContainerProps) {
     isProcessingRef.current = false;
     setIsProcessing(false);
 
-    // 立即将当前 AI 消息的 streaming 设为 false
+    // 检查是否有待处理的 interrupt，如果有则发送 reject 决策
+    const pendingMsg = messagesRef.current.find(messageHasInterrupt);
+    if (pendingMsg && agent) {
+      const block = (pendingMsg.content as AssistantMessage[]).find(
+        (b) =>
+          b.type === MsgType.TOOL_CALL &&
+          b.tool_calls?.some((tc) => tc.interrupt),
+      );
+      const tc = block?.tool_calls?.find((t) => t.interrupt);
+      if (tc && tc.interrupt) {
+        // 通过 LangGraph 的 HITL 机制发送 reject 决策
+        await handleDecision("reject", tc.id || "", tc.interrupt);
+        return; // 等待 handleDecision 完成后再添加取消消息
+      }
+    }
+
+    // 立即将当前 AI 消息的 streaming 设为 false，并为未完成的 tool_call 添加取消响应
     setMessages((prev) => {
       const next = [...prev];
       const aiIdx = next.findIndex(
@@ -194,6 +210,20 @@ export function AppContainer({ config }: AppContainerProps) {
       );
       if (aiIdx !== -1) {
         next[aiIdx].streaming = false;
+
+        // 为未完成的 tool_call 添加取消响应，避免 LangGraph 状态不一致
+        const aiMsg = next[aiIdx];
+        if (Array.isArray(aiMsg.content)) {
+          for (const block of aiMsg.content) {
+            if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
+              for (const tc of block.tool_calls) {
+                if (!tc.result) {
+                  tc.result = "Command cancelled by user";
+                }
+              }
+            }
+          }
+        }
       }
       return next;
     });
@@ -689,7 +719,7 @@ ${t("help.withAiAgent")}`,
         const hasInterrupt = messagesRef.current.some(messageHasInterrupt);
 
         if (isCurrentlyProcessing || hasInterrupt) {
-          cancelCurrentTask();
+          void cancelCurrentTask();
         }
         return;
       }
