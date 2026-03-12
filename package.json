@@ -1,11 +1,11 @@
 {
   "name": "@zhizuqiu/openshell",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "OpenShell CLI - Natural Language Command-Line Assistant",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "openshell": "dist/index.js"
+    "openshell": "bin/cli.cjs"
   },
   "publishConfig": {
     "access": "public"
@@ -27,6 +27,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "package.json",
     "README.md"
   ],
