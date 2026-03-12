@@ -55,6 +55,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const messagesRef = useRef(messages); // 消息数组的引用，用于在非 React 闭包（如 stdin 事件）中获取最新状态
   const isProcessingRef = useRef(isProcessing); // 处理状态的引用，用于输入拦截逻辑
   const seenMessageIdsRef = useRef(new Set<string>()); // 已渲染的消息 ID 集合，用于多轮对话的消息去重
+  const isCancelledRef = useRef(false); // 取消标志，用于 ESC 键中断当前任务
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const suggestionsRef = useRef<string[]>([]);
@@ -155,6 +156,7 @@ export function AppContainer({ config }: AppContainerProps) {
 
   // 取消当前任务：停止正在运行的命令并重置状态
   const cancelCurrentTask = () => {
+    isCancelledRef.current = true;
     killAllProcesses();
     activeStreamsRef.current = 0;
     setIsProcessing(false);
@@ -263,6 +265,9 @@ ${t("help.withAiAgent")}`,
   };
 
   const handleAiStream = async (cmd: string) => {
+    // 重置取消标志
+    isCancelledRef.current = false;
+
     activeStreamsRef.current++;
     setIsProcessing(true);
     try {
@@ -286,7 +291,10 @@ ${t("help.withAiAgent")}`,
       );
       await processAiStream(stream);
     } catch (error) {
-      handleError(error);
+      // 如果是取消操作，不显示错误
+      if (!isCancelledRef.current) {
+        handleError(error);
+      }
     } finally {
       activeStreamsRef.current--;
       if (activeStreamsRef.current <= 0) setIsProcessing(false);
@@ -303,6 +311,11 @@ ${t("help.withAiAgent")}`,
     const aiMsgIndex = currentAiMsgIndexRef.current;
 
     for await (const chunk of stream) {
+      // 检查取消标志，如果已取消则退出循环
+      if (isCancelledRef.current) {
+        break;
+      }
+
       if (!chunk || typeof chunk !== "object") continue;
 
       const nodeName = Object.keys(chunk)[0];
