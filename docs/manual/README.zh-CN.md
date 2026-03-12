@@ -20,7 +20,22 @@
 
 ### 前提条件
 
-- **Node.js**: >= 20.0.0
+- **Node.js**: >= 20.0.0 (必需)
+
+> **注意**: OpenShell 使用现代 ESM 模块，需要 Node.js 20 或更高版本。如果遇到 `SyntaxError: Unexpected token {`，请升级 Node.js。
+
+**升级 Node.js**：
+
+```bash
+# 使用 nvm（推荐）
+nvm install 20 && nvm use 20
+
+# 使用 Homebrew (macOS)
+brew install node@20
+
+# 官方安装包
+# https://nodejs.org/zh-cn/download/
+```
 
 ### 全局安装
 

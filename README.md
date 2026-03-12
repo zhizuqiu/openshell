@@ -20,7 +20,22 @@ Interact with your system using natural language. No more memorizing complex com
 
 ### Prerequisites
 
-- **Node.js**: >= 20.0.0
+- **Node.js**: >= 20.0.0 (required)
+
+> **Note**: OpenShell uses modern ESM modules and requires Node.js 20 or later. If you encounter `SyntaxError: Unexpected token {`, please upgrade Node.js.
+
+**Upgrade Node.js**:
+
+```bash
+# Using nvm (recommended)
+nvm install 20 && nvm use 20
+
+# Using Homebrew (macOS)
+brew install node@20
+
+# Official installer
+# https://nodejs.org/en/download/
+```
 
 ### Global Installation
 
