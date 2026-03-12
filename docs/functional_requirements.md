@@ -1,10 +1,10 @@
-# Cubectl 功能需求文档 (Functional Requirements Document)
+# OpenShell 功能需求文档 (Functional Requirements Document)
 
-本文档旨在汇总并规范 `cubectl` 项目的所有功能需求、用户体验细节及技术约束。
+本文档旨在汇总并规范 `openshell` 项目的所有功能需求、用户体验细节及技术约束。
 
 ## 1. 项目概述
 
-`cubectl` 是一个 AI 驱动的 Kubernetes 助手，通过交互式命令行界面 (TUI) 帮助用户更高效地管理和查询 Kubernetes 集群资源。
+`openshell` 是一个 AI 驱动的 Kubernetes 助手，通过交互式命令行界面 (TUI) 帮助用户更高效地管理和查询 Kubernetes 集群资源。
 
 ## 2. 核心功能需求
 
@@ -54,7 +54,7 @@
 
 - **双层配置文件**:
   1. 项目根目录的 `.env` (最高优先级)。
-  2. 用户家目录的 `~/.cubectl/.env` (全局次优先级)。
+  2. 用户家目录的 `~/.openshell/.env` (全局次优先级)。
 - **密钥安全**: 必须在初始化时优先验证 API Key 配置，缺失时给予清晰引导。
 
 ### 4.2 架构实现

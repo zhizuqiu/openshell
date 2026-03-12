@@ -1,8 +1,8 @@
 [English](../../README.md) | 中文
 
-# Cubectl
+# OpenShell
 
-🚀 **Cubectl** 是一个基于 AI 驱动的顶级 Kubernetes 运维助手终端工具，使用 [Ink](https://github.com/vadimdemedes/ink) 和 [LangChain](https://github.com/langchain-ai/langchainjs) 构建。
+🚀 **OpenShell** 是一个基于 AI 驱动的顶级 Kubernetes 运维助手终端工具，使用 [Ink](https://github.com/vadimdemedes/ink) 和 [LangChain](https://github.com/langchain-ai/langchainjs) 构建。
 
 使用自然语言直接管理您的 Kubernetes 集群。无需再苦记复杂的 `kubectl` 参数——只需提问，让 AI 在“人类在环”安全机制的保护下为您处理繁重任务。
 
@@ -26,15 +26,15 @@
 ### 全局安装
 
 ```bash
-npm install -g @zhizuqiu/cubectl@latest
-cubectl
+npm install -g @zhizuqiu/openshell@latest
+openshell
 ```
 
 ### 本地开发
 
 ```bash
-git clone https://github.com/zhizuqiu/cubectl.git
-cd cubectl/cubectl
+git clone https://github.com/zhizuqiu/openshell.git
+cd openshell/openshell
 npm install
 npm run build
 npm start
@@ -42,7 +42,7 @@ npm start
 
 ## ⚙️ 环境变量配置
 
-Cubectl 支持通过 `.env` 文件配置环境变量（项目根目录或 `~/.cubectl/.env`）。
+OpenShell 支持通过 `.env` 文件配置环境变量（项目根目录或 `~/.openshell/.env`）。
 
 | 变量名             | 必选   | 描述                           | 默认值                      |
 | :----------------- | :----- | :----------------------------- | :-------------------------- |

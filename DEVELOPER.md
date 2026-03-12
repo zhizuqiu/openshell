@@ -1,12 +1,12 @@
 English | [中文](./docs/manual/DEVELOPER.zh-CN.md)
 
-# Cubectl Developer Guide
+# OpenShell Developer Guide
 
-> This document records the development philosophy, architectural design, and technology stack of the Cubectl project for future developers or AI coding assistants.
+> This document records the development philosophy, architectural design, and technology stack of the OpenShell project for future developers or AI coding assistants.
 
 ## 🎯 Project Vision
 
-Cubectl is an **AI-powered Kubernetes operations assistant**. Users can interact with Kubernetes clusters using natural language, eliminating the need to memorize complex `kubectl` commands.
+OpenShell is an **AI-powered Kubernetes operations assistant**. Users can interact with Kubernetes clusters using natural language, eliminating the need to memorize complex `kubectl` commands.
 
 **Core Features**:
 
@@ -23,7 +23,7 @@ Cubectl is an **AI-powered Kubernetes operations assistant**. Users can interact
 
 ```mermaid
 graph TD
-    User[(User)] <--> CLI[Cubectl CLI / Ink]
+    User[(User)] <--> CLI[OpenShell CLI / Ink]
     CLI <--> Agent[LangChain Agent / LangGraph]
     Agent <--> Tools[K8s Tools]
     Tools <--> Client[Dynamic K8s Client]
@@ -33,7 +33,7 @@ graph TD
 ### Project Structure (Flattened)
 
 ```
-cubectl/
+openshell/
 ├── src/
 │   ├── core/                 # Core Library (ESM)
 │   │   ├── ai/               # AI Agent Logic
@@ -50,7 +50,7 @@ cubectl/
 ├── docs/manual/              # Manuals and non-default language docs
 ├── scripts/                  # Operations scripts
 ├── package.json              # Project configuration
-└── ~/.cubectl/.env           # Global config (OPENAI_API_KEY, etc.)
+└── ~/.openshell/.env           # Global config (OPENAI_API_KEY, etc.)
 ```
 
 ---

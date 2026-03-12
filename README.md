@@ -1,8 +1,8 @@
 English | [中文](./docs/manual/README.zh-CN.md)
 
-# Cubectl
+# OpenShell
 
-🚀 **Cubectl** is a state-of-the-art AI-powered Kubernetes operations assistant terminal tool built with [Ink](https://github.com/vadimdemedes/ink) and [LangChain](https://github.com/langchain-ai/langchainjs).
+🚀 **OpenShell** is a state-of-the-art AI-powered Kubernetes operations assistant terminal tool built with [Ink](https://github.com/vadimdemedes/ink) and [LangChain](https://github.com/langchain-ai/langchainjs).
 
 Interact with your Kubernetes clusters using natural language. No more memorizing complex `kubectl` flags—just ask and let the AI handle the heavy lifting with full Human-in-the-Loop safety.
 
@@ -26,15 +26,15 @@ Interact with your Kubernetes clusters using natural language. No more memorizin
 ### Global Installation
 
 ```bash
-npm install -g @zhizuqiu/cubectl@latest
-cubectl
+npm install -g @zhizuqiu/openshell@latest
+openshell
 ```
 
 ### Local Development
 
 ```bash
-git clone https://github.com/zhizuqiu/cubectl.git
-cd cubectl/cubectl
+git clone https://github.com/zhizuqiu/openshell.git
+cd openshell/openshell
 npm install
 npm run build
 npm start
@@ -42,7 +42,7 @@ npm start
 
 ## ⚙️ Configuration
 
-Cubectl supports environment variables via `.env` files (Project root or `~/.cubectl/.env`).
+OpenShell supports environment variables via `.env` files (Project root or `~/.openshell/.env`).
 
 | Variable           | Required | Description                         | Default                     |
 | :----------------- | :------- | :---------------------------------- | :-------------------------- |

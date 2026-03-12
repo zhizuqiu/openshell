@@ -1,10 +1,10 @@
-# Cubectl 开发指南
+# OpenShell 开发指南
 
 ## 📦 项目概述
 
-Cubectl 是一个基于 AI 的 Kubernetes CLI 工具，使用 Ink（终端 React）、LangChain 和 TypeScript 构建。
+OpenShell 是一个基于 AI 的 Kubernetes CLI 工具，使用 Ink（终端 React）、LangChain 和 TypeScript 构建。
 
-**包名**: `@zhizuqiu/cubectl`  
+**包名**: `@zhizuqiu/openshell`  
 **Node**: >=20.0.0  
 **模块**: ESM (`"type": "module"`)
 

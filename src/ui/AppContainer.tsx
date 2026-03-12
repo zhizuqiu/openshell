@@ -211,6 +211,24 @@ ${t('help.withAiAgent')}`,
         }
 
         if (agent) {
+            // Check for pending interrupts (HITL)
+            const currentMessages = messagesRef.current;
+            const pendingMsg = currentMessages.find(messageHasInterrupt);
+
+            // If there's a pending interrupt and the input is empty or "继续/continue/ok"
+            // we resume the graph with approval.
+            const resumeKeywords = ['继续', 'continue', 'ok', 'yes', 'y', '']
+            if (pendingMsg && resumeKeywords.includes(trimmed.toLowerCase())) {
+                const block = (pendingMsg.content as AssistantMessage[]).find(
+                    (b) => b.type === MsgType.TOOL_CALL && b.tool_calls?.some((tc) => tc.interrupt),
+                );
+                const tc = block?.tool_calls?.find((t) => t.interrupt);
+                if (tc && tc.interrupt) {
+                    await handleDecision('approve', tc.id || '', tc.interrupt);
+                    return;
+                }
+            }
+
             await handleAiStream(trimmed);
         } else {
             setMessages((prev) => [
@@ -263,7 +281,6 @@ ${t('help.withAiAgent')}`,
     ) => {
         let lastToolCallId: string | null = null;
         let hasInterrupt = false;
-        const isResume = isResumeRef.current;
         const aiMsgIndex = currentAiMsgIndexRef.current;
 
         for await (const chunk of stream) {
@@ -409,8 +426,15 @@ ${t('help.withAiAgent')}`,
                         }
                         if (toolCalls && Array.isArray(toolCalls)) {
                             lastToolCallId = toolCalls[0]?.id || null;
-                            // 如果是从 HITL 恢复的流，我们不需要再次添加工具调用定义块
-                            if (!isResume) {
+
+                            // Check if this tool call block already exists in assistantContent to avoid duplicates
+                            const exists = assistantContent.some(
+                                (block) =>
+                                    block.type === MsgType.TOOL_CALL &&
+                                    block.tool_calls?.some(tc => tc.id === lastToolCallId)
+                            );
+
+                            if (!exists) {
                                 assistantContent.push({
                                     type: MsgType.TOOL_CALL,
                                     tool_calls: toolCalls.map((tc) => ({
@@ -788,7 +812,7 @@ ${t('help.withAiAgent')}`,
                 {(item) => (
                     <Box key={item} marginBottom={1} flexDirection="column" alignItems="center" width="100%">
                         <Gradient name="morning">
-                            <BigText text="OPENSHELL" font="block" />
+                            <BigText text="OpenShell" font="block" />
                         </Gradient>
                         <Box marginTop={1} flexDirection="row" gap={2}>
                             <Box flexDirection="row" gap={1}>
