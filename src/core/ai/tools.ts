@@ -6,6 +6,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { spawn, type ChildProcess } from "child_process";
+import { getCommandManager } from "../session/command-manager.js";
 
 // Track running child processes for cleanup on exit
 const runningProcesses = new Map<ChildProcess, ProcessInfo>();
@@ -75,6 +76,8 @@ export function killProcessesBySignal(abortSignal: AbortSignal): void {
  * Create tools for shell operations using the tool() API
  */
 export function createShellTools() {
+  const commandManager = getCommandManager();
+
   const bashTool = tool(
     async (input: { command: string; abortSignal?: AbortSignal }) => {
       const { command, abortSignal } = input;
@@ -213,5 +216,151 @@ export function createShellTools() {
     },
   );
 
-  return [bashTool];
+  const startCommandTool = tool(
+    async ({
+      command,
+      description,
+    }: {
+      command: string;
+      description: string;
+    }) => {
+      try {
+        const result = await commandManager.startCommand(command, description);
+        return `Background command started:
+- Command ID: ${result.command_id}
+- Status: ${result.status}
+- PID: ${result.pid}
+
+Use get_command to check progress, stop_command to stop it.`;
+      } catch (error) {
+        return `Failed to start command: ${error instanceof Error ? error.message : "Unknown error"}`;
+      }
+    },
+    {
+      name: "start_command",
+      description:
+        "Start a long-running command in the background. Use this for tasks that take more than a few seconds. The command runs independently and doesn't block the conversation.",
+      schema: z.object({
+        command: z.string().describe("The command to execute"),
+        description: z
+          .string()
+          .describe("Brief description of what this command does"),
+      }),
+    },
+  );
+
+  const getCommandTool = tool(
+    async ({ command_id }: { command_id: string }) => {
+      const cmd = commandManager.getCommand(command_id);
+      if (!cmd) {
+        return `Command not found: ${command_id}`;
+      }
+
+      const output =
+        commandManager.getCommandOutput(command_id) || "(no output yet)";
+      const durationSec = (cmd.duration / 1000).toFixed(1);
+
+      return `Command: ${cmd.command}
+Description: ${cmd.description}
+Status: ${cmd.status}
+Duration: ${durationSec}s
+Exit Code: ${cmd.exitCode ?? "N/A"}
+
+Output:
+${output}`;
+    },
+    {
+      name: "get_command",
+      description:
+        "Get the status and output of a background command. Use the command_id returned by start_command.",
+      schema: z.object({
+        command_id: z
+          .string()
+          .describe("The command ID returned by start_command"),
+      }),
+    },
+  );
+
+  const listCommandsTool = tool(
+    async ({ status }: { status?: string } = {}) => {
+      const commands = commandManager.listCommands(status);
+
+      if (commands.length === 0) {
+        return status
+          ? `No commands found with status: ${status}`
+          : "No background commands found.";
+      }
+
+      const summary = commands
+        .map(
+          (c) =>
+            `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`,
+        )
+        .join("\n");
+
+      return `Background commands (${commands.length}):\n${summary}`;
+    },
+    {
+      name: "list_commands",
+      description:
+        "List all background commands. Optionally filter by status (running, completed, failed, cancelled).",
+      schema: z.object({
+        status: z.string().optional().describe("Filter by status (optional)"),
+      }),
+    },
+  );
+
+  const stopCommandTool = tool(
+    async ({ command_id }: { command_id: string }) => {
+      const result = commandManager.stopCommand(command_id);
+
+      if (result.status === "not_found") {
+        return `Command not found or not running: ${command_id}`;
+      }
+
+      return `Command stopped: ${command_id}
+Status: cancelled
+
+The process has been terminated. Use delete_command to remove the record.`;
+    },
+    {
+      name: "stop_command",
+      description:
+        "Stop a running background command by sending SIGTERM to the process.",
+      schema: z.object({
+        command_id: z.string().describe("The command ID to stop"),
+      }),
+    },
+  );
+
+  const deleteCommandTool = tool(
+    async ({ command_id }: { command_id: string }) => {
+      const result = commandManager.deleteCommand(command_id);
+
+      if (result.success) {
+        return `Command record deleted: ${command_id}
+Resources have been freed.`;
+      }
+
+      return `Failed to delete command: ${command_id}
+Command not found.`;
+    },
+    {
+      name: "delete_command",
+      description:
+        "Delete a background command record. Use this to clean up completed/failed/cancelled commands and free resources.",
+      schema: z.object({
+        command_id: z.string().describe("The command ID to delete"),
+      }),
+    },
+  );
+
+  return [
+    bashTool,
+    startCommandTool,
+    getCommandTool,
+    listCommandsTool,
+    stopCommandTool,
+    deleteCommandTool,
+  ];
 }

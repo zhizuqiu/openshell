@@ -6,9 +6,14 @@
 
 import { main } from "./openshell.js";
 import { killAllProcesses } from "./core/ai/tools.js";
+import { getCommandManager } from "./core/session/command-manager.js";
 
 // Cleanup function to kill all running child processes
 function cleanup(): void {
+  // Cleanup background commands (stop lease renewal, kill processes)
+  getCommandManager().cleanupAll();
+
+  // Kill any remaining processes
   killAllProcesses();
 }
 
