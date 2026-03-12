@@ -46,19 +46,16 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@kubernetes/client-node": "1.4.0",
     "@langchain/core": "^1.1.15",
     "@langchain/langgraph": "1.1.1",
-    "@langchain/openai": "^1.2.2",
+    "@langchain/openai": "^1.2.13",
     "dotenv": "^17.1.0",
-    "eventsource-parser": "^3.0.6",
     "ink": "^6.6.0",
     "ink-big-text": "^2.0.0",
     "ink-gradient": "^3.0.0",
     "ink-select-input": "^6.2.0",
     "ink-spinner": "^5.0.0",
     "langchain": "^1.2.10",
-    "openai": "6.16.0",
     "react": "^19.2.0",
     "yargs": "^17.7.2",
     "zod": "4.3.5"

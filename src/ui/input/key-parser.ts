@@ -144,7 +144,10 @@ function* emitKeys(
         sequence: ESC,
         code: undefined,
       });
-      return;
+      // Reset state and continue the loop to avoid duplicate events on next yield
+      escaped = false;
+      sequence = "";
+      continue;
     }
 
     if (escaped && (ch === "O" || ch === "[" || ch === "]")) {
@@ -279,9 +282,11 @@ export function createDataListener(keypressHandler: KeypressHandler) {
   const parser = emitKeys(keypressHandler);
   parser.next(); // prime
 
-  let timeoutId: NodeJS.Timeout;
-  return (data: string) => {
-    clearTimeout(timeoutId);
+  let timeoutId: NodeJS.Timeout | null = null;
+  const listener = (data: string) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
     for (const char of data) {
       parser.next(char);
     }
@@ -289,5 +294,15 @@ export function createDataListener(keypressHandler: KeypressHandler) {
     if (data.length !== 0) {
       timeoutId = setTimeout(() => parser.next(""), 50);
     }
+  };
+
+  // Return cleanup function along with listener
+  return {
+    listener,
+    cleanup: () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    },
   };
 }

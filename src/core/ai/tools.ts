@@ -5,15 +5,21 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 
 // Track running child processes for cleanup on exit
-const runningProcesses = new Set<any>();
+const runningProcesses = new Map<ChildProcess, ProcessInfo>();
+
+interface ProcessInfo {
+  command: string;
+  startTime: number;
+  abortSignal?: AbortSignal;
+}
 
 /**
  * Get all running child processes
  */
-export function getRunningProcesses(): Set<any> {
+export function getRunningProcesses(): Map<ChildProcess, ProcessInfo> {
   return runningProcesses;
 }
 
@@ -21,15 +27,20 @@ export function getRunningProcesses(): Set<any> {
  * Kill all running child processes
  */
 export function killAllProcesses(): void {
-  for (const proc of runningProcesses) {
+  for (const [proc] of runningProcesses.entries()) {
     try {
       // Kill the entire process group (negative PID on Unix)
       if (proc.pid) {
-        process.kill(-proc.pid, "SIGTERM");
+        try {
+          process.kill(-proc.pid, "SIGTERM");
+        } catch {
+          // Fallback to killing just the process
+          proc.kill("SIGTERM");
+        }
       } else {
         proc.kill("SIGTERM");
       }
-    } catch (e) {
+    } catch {
       // Process already exited
     }
   }
@@ -37,22 +48,84 @@ export function killAllProcesses(): void {
 }
 
 /**
+ * Kill processes matching the abort signal
+ */
+export function killProcessesBySignal(abortSignal: AbortSignal): void {
+  for (const [proc, info] of runningProcesses.entries()) {
+    if (info.abortSignal === abortSignal) {
+      try {
+        if (proc.pid) {
+          try {
+            process.kill(-proc.pid, "SIGTERM");
+          } catch {
+            proc.kill("SIGTERM");
+          }
+        } else {
+          proc.kill("SIGTERM");
+        }
+      } catch {
+        // Process already exited
+      }
+      runningProcesses.delete(proc);
+    }
+  }
+}
+
+/**
  * Create tools for shell operations using the tool() API
  */
 export function createShellTools() {
   const bashTool = tool(
-    async (input: any) => {
-      return new Promise<string>((resolve) => {
-        const child = spawn(input.command, [], {
+    async (input: { command: string; abortSignal?: AbortSignal }) => {
+      const { command, abortSignal } = input;
+
+      return new Promise<string>((resolve, reject) => {
+        const child = spawn(command, [], {
           shell: true,
           stdio: ["ignore", "pipe", "pipe"],
-          detached: true, // Create new process group
+          detached: process.platform !== "win32", // Create new process group on Unix
         });
 
-        runningProcesses.add(child);
+        const processInfo: ProcessInfo = {
+          command,
+          startTime: Date.now(),
+          abortSignal,
+        };
+        runningProcesses.set(child, processInfo);
 
         let stdout = "";
         let stderr = "";
+        let isCancelled = false;
+        let isTimedOut = false;
+        let hasExited = false;
+
+        // Handle abort signal
+        const abortHandler = () => {
+          isCancelled = true;
+          if (!hasExited) {
+            try {
+              if (child.pid) {
+                try {
+                  process.kill(-child.pid, "SIGTERM");
+                } catch {
+                  child.kill("SIGTERM");
+                }
+              } else {
+                child.kill("SIGTERM");
+              }
+            } catch {
+              // Process already exited
+            }
+          }
+        };
+
+        if (abortSignal) {
+          if (abortSignal.aborted) {
+            abortHandler();
+          } else {
+            abortSignal.addEventListener("abort", abortHandler, { once: true });
+          }
+        }
 
         child.stdout.on("data", (data: Buffer) => {
           stdout += data.toString();
@@ -63,18 +136,67 @@ export function createShellTools() {
         });
 
         child.on("close", (code: number | null) => {
+          hasExited = true;
           runningProcesses.delete(child);
-          if (stderr && !stdout) {
-            resolve(`Error: ${stderr}`);
-          } else {
-            resolve(stdout || "Command executed successfully (no output)");
+
+          // Build result metadata
+          const metadata: string[] = [];
+          const duration = Date.now() - processInfo.startTime;
+
+          if (isCancelled) {
+            metadata.push(`Command cancelled by user after ${duration}ms`);
+          } else if (isTimedOut) {
+            metadata.push(`Command timed out after ${duration}ms`);
           }
+
+          if (code !== null && code !== 0 && !isCancelled) {
+            metadata.push(`Exit code: ${code}`);
+          }
+
+          // Format output
+          let result = stdout || "Command executed successfully (no output)";
+
+          if (stderr && !stdout && !isCancelled) {
+            result = `Error: ${stderr}`;
+          }
+
+          if (metadata.length > 0) {
+            result += `\n\n<command_metadata>\n${metadata.join("\n")}\n</command_metadata>`;
+          }
+
+          resolve(result);
         });
 
         child.on("error", (err: Error) => {
+          hasExited = true;
           runningProcesses.delete(child);
           resolve(`Error executing command: ${err.message}`);
         });
+
+        // Optional timeout handling (can be added via input)
+        if ((input as any).timeout && (input as any).timeout > 0) {
+          setTimeout(
+            () => {
+              if (!hasExited) {
+                isTimedOut = true;
+                try {
+                  if (child.pid) {
+                    try {
+                      process.kill(-child.pid, "SIGTERM");
+                    } catch {
+                      child.kill("SIGTERM");
+                    }
+                  } else {
+                    child.kill("SIGTERM");
+                  }
+                } catch {
+                  // Process already exited
+                }
+              }
+            },
+            (input as any).timeout,
+          );
+        }
       });
     },
     {

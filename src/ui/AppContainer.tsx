@@ -47,7 +47,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const [isProcessing, setIsProcessing] = useState(false); // 是否正在处理 AI 流，用于锁定输入和显示加载状态
   const [agent, setAgent] = useState<ReactAgent | null>(null); // LangChain Agent 实例
 
-  const [autoExecute, setAutoExecute] = useState(false); // 自主执行模式开关，开启后将跳过 HITL 审批
+  const [autoExecute, setAutoExecute] = useState(true); // 自主执行模式开关，开启后将跳过 HITL 审批
   const queryExecutedRef = useRef(false); // 确保在初始启动时的 query 指令只执行一次
   const activeStreamsRef = useRef(0); // 追踪当前活跃的流数量，防止并发冲突
   const isResumeRef = useRef(false); // 标记当前流是否为 HITL 审批后的恢复执行
@@ -55,11 +55,18 @@ export function AppContainer({ config }: AppContainerProps) {
   const messagesRef = useRef(messages); // 消息数组的引用，用于在非 React 闭包（如 stdin 事件）中获取最新状态
   const isProcessingRef = useRef(isProcessing); // 处理状态的引用，用于输入拦截逻辑
   const seenMessageIdsRef = useRef(new Set<string>()); // 已渲染的消息 ID 集合，用于多轮对话的消息去重
-  const isCancelledRef = useRef(false); // 取消标志，用于 ESC 键中断当前任务
+  const abortControllerRef = useRef<AbortController | null>(null); // 当前对话的取消控制器
+  const lastEscapeTimeRef = useRef(0); // 上次 ESC 键按下的时间，用于防抖
+  const cancelMessageAddedRef = useRef(false); // 防止重复添加取消消息
+  const currentCommandRef = useRef<string>(""); // 当前正在执行的命令
+  const currentStreamRef = useRef<AsyncGenerator<Record<string, any>> | null>(
+    null,
+  ); // 当前正在执行的 stream
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const suggestionsRef = useRef<string[]>([]);
   const selectedIndexRef = useRef(0);
+  const cleanupKeyListenerRef = useRef<(() => void) | null>(null); // 存储 key listener 的 cleanup 函数
 
   const ALL_COMMANDS = ["help", "version", "exit"];
 
@@ -156,16 +163,47 @@ export function AppContainer({ config }: AppContainerProps) {
 
   // 取消当前任务：停止正在运行的命令并重置状态
   const cancelCurrentTask = () => {
-    isCancelledRef.current = true;
+    if (cancelMessageAddedRef.current) return;
+    cancelMessageAddedRef.current = true;
+
+    // 触发 AbortController 取消
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // 清除 key listener 中 pending 的 timeout，防止重复触发 ESC 事件
+    if (cleanupKeyListenerRef.current) {
+      cleanupKeyListenerRef.current();
+    }
+    // 停止当前 stream
+    if (currentStreamRef.current) {
+      currentStreamRef.current.return?.(undefined);
+      currentStreamRef.current = null;
+    }
     killAllProcesses();
     activeStreamsRef.current = 0;
-    setIsProcessing(false);
+    // 更新 ref 和 state
     isProcessingRef.current = false;
+    setIsProcessing(false);
+
+    // 立即将当前 AI 消息的 streaming 设为 false
+    setMessages((prev) => {
+      const next = [...prev];
+      const aiIdx = next.findIndex(
+        (m) => m.role === Role.ASSISTANT && m.streaming,
+      );
+      if (aiIdx !== -1) {
+        next[aiIdx].streaming = false;
+      }
+      return next;
+    });
+
+    const command = currentCommandRef.current?.trim() || "当前操作";
     setMessages((prev) => [
       ...prev,
       {
         role: Role.ASSISTANT,
-        content: "任务已取消。",
+        content: `任务已取消：${command}（用户按下 ESC 键中断）`,
         timestamp: new Date(),
         error: true,
       },
@@ -265,8 +303,13 @@ ${t("help.withAiAgent")}`,
   };
 
   const handleAiStream = async (cmd: string) => {
-    // 重置取消标志
-    isCancelledRef.current = false;
+    // 取消之前的对话
+    abortControllerRef.current?.abort();
+    // 创建新的 AbortController
+    abortControllerRef.current = new AbortController();
+
+    cancelMessageAddedRef.current = false;
+    currentCommandRef.current = cmd;
 
     activeStreamsRef.current++;
     setIsProcessing(true);
@@ -289,15 +332,23 @@ ${t("help.withAiAgent")}`,
         { messages: [{ role: Role.USER, content: cmd }] },
         { streamMode: "updates", configurable: { thread_id: "main-session" } },
       );
-      await processAiStream(stream);
+      currentStreamRef.current = stream;
+      await processAiStream(stream, abortControllerRef.current);
+      currentStreamRef.current = null;
     } catch (error) {
       // 如果是取消操作，不显示错误
-      if (!isCancelledRef.current) {
+      if (!abortControllerRef.current?.signal.aborted) {
         handleError(error);
       }
     } finally {
       activeStreamsRef.current--;
-      if (activeStreamsRef.current <= 0) setIsProcessing(false);
+      // 只有在没有取消时才更新 isProcessing
+      if (
+        !abortControllerRef.current?.signal.aborted &&
+        activeStreamsRef.current <= 0
+      ) {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -305,193 +356,202 @@ ${t("help.withAiAgent")}`,
   // 负责解析 LangGraph 的 'updates' 流，并处理消息去重、工具调用渲染以及中断检测
   const processAiStream = async (
     stream: AsyncIterable<Record<string, any>>,
+    abortController: AbortController,
   ) => {
     let lastToolCallId: string | null = null;
     let hasInterrupt = false;
     const aiMsgIndex = currentAiMsgIndexRef.current;
 
-    for await (const chunk of stream) {
-      // 检查取消标志，如果已取消则退出循环
-      if (isCancelledRef.current) {
-        break;
-      }
-
-      if (!chunk || typeof chunk !== "object") continue;
-
-      const nodeName = Object.keys(chunk)[0];
-      const nodeData = chunk[nodeName] as { messages: BaseMessage[] };
-
-      // 消息去重辅助逻辑：
-      // 在 'updates' 模式下，middleware 处理后的消息会以序列化格式回传。
-      // 此时 msg.id 可能是类路径数组 (如 ["langchain_core", "messages", "HumanMessage"])。
-      // 我们必须提取真正的唯一 ID (通常在 kwargs.id 中) 进行字符串匹配。
-      if (nodeData && Array.isArray(nodeData.messages)) {
-        nodeData.messages = nodeData.messages.filter((msg: any) => {
-          const rawId = msg.id || (msg as any).kwargs?.id;
-          const msgId =
-            typeof rawId === "string" ? rawId : (msg as any).kwargs?.id;
-
-          if (
-            typeof msgId === "string" &&
-            seenMessageIdsRef.current.has(msgId)
-          ) {
-            return false;
-          }
-          if (typeof msgId === "string") {
-            seenMessageIdsRef.current.add(msgId);
-          }
-          return true;
-        });
-      }
-
-      const firstMsg = nodeData?.messages?.[0];
-      const interrupt =
-        chunk["__interrupt__"]?.[0] ||
-        (firstMsg instanceof AIMessage
-          ? (
-              firstMsg.additional_kwargs["interrupts"] as unknown as Interrupt[]
-            )?.[0]
-          : null) ||
-        (firstMsg as any)?.interrupt;
-
-      if (interrupt && !hasInterrupt) {
-        hasInterrupt = true;
-        if (autoExecute) {
-          handleDecision("approve", lastToolCallId || "", interrupt);
-          return;
+    try {
+      for await (const chunk of stream) {
+        // 检查取消标志，如果已取消则退出循环
+        if (abortController.signal.aborted) {
+          return; // 直接返回，不再执行后续设置 streaming=false 的逻辑
         }
 
-        setMessages((prev) => {
-          const next = [...prev];
-          const idx = aiMsgIndex;
-          if (idx === -1) return prev;
-          const aiMsg = { ...next[idx] };
-          const assistantContent = Array.isArray(aiMsg.content)
-            ? [...aiMsg.content]
-            : [];
+        if (!chunk || typeof chunk !== "object") continue;
 
-          // 更新消息树：找到当前正在运行的工具调用块，并注入中断（Interrupt）信息
-          // 这将触发 UI 显示审批按钮
-          for (const block of assistantContent) {
-            if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-              const tc = block.tool_calls.find(
-                (t) =>
-                  !t.result &&
-                  (lastToolCallId ? t.id === lastToolCallId : true),
-              );
-              if (tc) {
-                tc.interrupt = interrupt;
-                break;
-              }
+        const nodeName = Object.keys(chunk)[0];
+        const nodeData = chunk[nodeName] as { messages: BaseMessage[] };
+
+        // 消息去重辅助逻辑：
+        // 在 'updates' 模式下，middleware 处理后的消息会以序列化格式回传。
+        // 此时 msg.id 可能是类路径数组 (如 ["langchain_core", "messages", "HumanMessage"])。
+        // 我们必须提取真正的唯一 ID (通常在 kwargs.id 中) 进行字符串匹配。
+        if (nodeData && Array.isArray(nodeData.messages)) {
+          nodeData.messages = nodeData.messages.filter((msg: any) => {
+            const rawId = msg.id || (msg as any).kwargs?.id;
+            const msgId =
+              typeof rawId === "string" ? rawId : (msg as any).kwargs?.id;
+
+            if (
+              typeof msgId === "string" &&
+              seenMessageIdsRef.current.has(msgId)
+            ) {
+              return false;
             }
-          }
-          aiMsg.content = assistantContent;
-          next[idx] = aiMsg;
-          return next;
-        });
-      }
-
-      if (!nodeData || !Array.isArray(nodeData.messages)) continue;
-
-      for (const msg of nodeData.messages as any[]) {
-        const content =
-          typeof msg.content === "string"
-            ? msg.content
-            : JSON.stringify(msg.content);
-        const toolCalls = msg.tool_calls || msg.kwargs?.tool_calls || [];
-
-        // 健壮的角色与类型识别
-        let msgType = msg._getType?.() || msg.type || msg.kwargs?.type;
-        if (!msgType && Array.isArray(msg.id)) {
-          const lcClass = msg.id[msg.id.length - 1];
-          if (lcClass === "HumanMessage" || lcClass === "HumanMessageChunk")
-            msgType = "human";
-          else if (lcClass === "AIMessage" || lcClass === "AIMessageChunk")
-            msgType = "ai";
-          else if (lcClass === "ToolMessage") msgType = "tool";
-          else if (lcClass === "SystemMessage") msgType = "system";
+            if (typeof msgId === "string") {
+              seenMessageIdsRef.current.add(msgId);
+            }
+            return true;
+          });
         }
 
-        // 统一角色判定
-        const isTool =
-          msgType === "tool" ||
-          msg instanceof ToolMessage ||
-          msg.id === "ToolMessage";
-        const isAI =
-          msgType === "ai" ||
-          msg instanceof AIMessage ||
-          msgType === "assistant";
-        const role = isTool ? "tool" : isAI ? "assistant" : msgType;
+        const firstMsg = nodeData?.messages?.[0];
+        const interrupt =
+          chunk["__interrupt__"]?.[0] ||
+          (firstMsg instanceof AIMessage
+            ? (
+                firstMsg.additional_kwargs[
+                  "interrupts"
+                ] as unknown as Interrupt[]
+              )?.[0]
+            : null) ||
+          (firstMsg as any)?.interrupt;
 
-        // 严格过滤：仅处理当前 Turn 产生的 AI 响应或工具执行结果
-        // 'human' 和 'system' 消息来自历史状态回传，应予跳过
-        if (role === "human" || role === "system") continue;
+        if (interrupt && !hasInterrupt) {
+          hasInterrupt = true;
+          if (autoExecute) {
+            handleDecision("approve", lastToolCallId || "", interrupt);
+            return;
+          }
 
-        setMessages((prev) => {
-          const next = [...prev];
-          const idx = aiMsgIndex;
-          if (idx === -1) return prev;
-          const aiMsg = { ...next[idx] };
-          const assistantContent = Array.isArray(aiMsg.content)
-            ? [...aiMsg.content]
-            : [];
+          setMessages((prev) => {
+            const next = [...prev];
+            const idx = aiMsgIndex;
+            if (idx === -1) return prev;
+            const aiMsg = { ...next[idx] };
+            const assistantContent = Array.isArray(aiMsg.content)
+              ? [...aiMsg.content]
+              : [];
 
-          if (role === "assistant") {
-            if (content) {
-              // 在 updates 模式下，系统返回的是该节点生成的完整文本。
-              // 为了支持流式视觉效果，我们检查最后一个文本块：
-              // 如果内容发生变化则同步替换，否则追加新块。
-              const lastTextBlock =
-                assistantContent[assistantContent.length - 1];
-              if (
-                lastTextBlock &&
-                lastTextBlock.type === MsgType.TEXT &&
-                lastTextBlock.content !== content
-              ) {
-                lastTextBlock.content = content;
-              } else if (
-                !lastTextBlock ||
-                lastTextBlock.type !== MsgType.TEXT
-              ) {
-                assistantContent.push({ type: MsgType.TEXT, content });
-              }
-            }
-            if (toolCalls && Array.isArray(toolCalls)) {
-              lastToolCallId = toolCalls[0]?.id || null;
-
-              // Check if this tool call block already exists in assistantContent to avoid duplicates
-              const exists = assistantContent.some(
-                (block) =>
-                  block.type === MsgType.TOOL_CALL &&
-                  block.tool_calls?.some((tc) => tc.id === lastToolCallId),
-              );
-
-              if (!exists) {
-                assistantContent.push({
-                  type: MsgType.TOOL_CALL,
-                  tool_calls: toolCalls.map((tc) => ({
-                    id: tc.id || "",
-                    name: tc.name,
-                    args: tc.args,
-                  })),
-                });
-              }
-            }
-          } else if (role === "tool") {
-            // 处理工具执行结果：将结果挂载到对应的工具调用块上，由 MessageComponent 负责渲染输出
-            const toolId =
-              msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
+            // 更新消息树：找到当前正在运行的工具调用块，并注入中断（Interrupt）信息
+            // 这将触发 UI 显示审批按钮
             for (const block of assistantContent) {
               if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                const tc = block.tool_calls.find((t) => t.id === toolId);
-                if (tc) tc.result = content;
+                const tc = block.tool_calls.find(
+                  (t) =>
+                    !t.result &&
+                    (lastToolCallId ? t.id === lastToolCallId : true),
+                );
+                if (tc) {
+                  tc.interrupt = interrupt;
+                  break;
+                }
               }
             }
+            aiMsg.content = assistantContent;
+            next[idx] = aiMsg;
+            return next;
+          });
+        }
+
+        if (!nodeData || !Array.isArray(nodeData.messages)) continue;
+
+        for (const msg of nodeData.messages as any[]) {
+          const content =
+            typeof msg.content === "string"
+              ? msg.content
+              : JSON.stringify(msg.content);
+          const toolCalls = msg.tool_calls || msg.kwargs?.tool_calls || [];
+
+          // 健壮的角色与类型识别
+          let msgType = msg._getType?.() || msg.type || msg.kwargs?.type;
+          if (!msgType && Array.isArray(msg.id)) {
+            const lcClass = msg.id[msg.id.length - 1];
+            if (lcClass === "HumanMessage" || lcClass === "HumanMessageChunk")
+              msgType = "human";
+            else if (lcClass === "AIMessage" || lcClass === "AIMessageChunk")
+              msgType = "ai";
+            else if (lcClass === "ToolMessage") msgType = "tool";
+            else if (lcClass === "SystemMessage") msgType = "system";
           }
-          aiMsg.content = assistantContent;
-          next[idx] = aiMsg;
-          return next;
-        });
+
+          // 统一角色判定
+          const isTool =
+            msgType === "tool" ||
+            msg instanceof ToolMessage ||
+            msg.id === "ToolMessage";
+          const isAI =
+            msgType === "ai" ||
+            msg instanceof AIMessage ||
+            msgType === "assistant";
+          const role = isTool ? "tool" : isAI ? "assistant" : msgType;
+
+          // 严格过滤：仅处理当前 Turn 产生的 AI 响应或工具执行结果
+          // 'human' 和 'system' 消息来自历史状态回传，应予跳过
+          if (role === "human" || role === "system") continue;
+
+          setMessages((prev) => {
+            const next = [...prev];
+            const idx = aiMsgIndex;
+            if (idx === -1) return prev;
+            const aiMsg = { ...next[idx] };
+            const assistantContent = Array.isArray(aiMsg.content)
+              ? [...aiMsg.content]
+              : [];
+
+            if (role === "assistant") {
+              if (content) {
+                // 在 updates 模式下，系统返回的是该节点生成的完整文本。
+                // 为了支持流式视觉效果，我们检查最后一个文本块：
+                // 如果内容发生变化则同步替换，否则追加新块。
+                const lastTextBlock =
+                  assistantContent[assistantContent.length - 1];
+                if (
+                  lastTextBlock &&
+                  lastTextBlock.type === MsgType.TEXT &&
+                  lastTextBlock.content !== content
+                ) {
+                  lastTextBlock.content = content;
+                } else if (
+                  !lastTextBlock ||
+                  lastTextBlock.type !== MsgType.TEXT
+                ) {
+                  assistantContent.push({ type: MsgType.TEXT, content });
+                }
+              }
+              if (toolCalls && Array.isArray(toolCalls)) {
+                lastToolCallId = toolCalls[0]?.id || null;
+
+                // Check if this tool call block already exists in assistantContent to avoid duplicates
+                const exists = assistantContent.some(
+                  (block) =>
+                    block.type === MsgType.TOOL_CALL &&
+                    block.tool_calls?.some((tc) => tc.id === lastToolCallId),
+                );
+
+                if (!exists) {
+                  assistantContent.push({
+                    type: MsgType.TOOL_CALL,
+                    tool_calls: toolCalls.map((tc) => ({
+                      id: tc.id || "",
+                      name: tc.name,
+                      args: tc.args,
+                    })),
+                  });
+                }
+              }
+            } else if (role === "tool") {
+              // 处理工具执行结果：将结果挂载到对应的工具调用块上，由 MessageComponent 负责渲染输出
+              const toolId =
+                msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
+              for (const block of assistantContent) {
+                if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
+                  const tc = block.tool_calls.find((t) => t.id === toolId);
+                  if (tc) tc.result = content;
+                }
+              }
+            }
+            aiMsg.content = assistantContent;
+            next[idx] = aiMsg;
+            return next;
+          });
+        }
+      }
+    } catch (streamError) {
+      if (!abortController.signal.aborted) {
+        throw streamError;
       }
     }
     setMessages((prev) => {
@@ -573,7 +633,7 @@ ${t("help.withAiAgent")}`,
         new Command({ resume: { [interrupt.id]: { decisions } } }) as any,
         { streamMode: "updates", configurable: { thread_id: "main-session" } },
       );
-      await processAiStream(stream);
+      await processAiStream(stream, abortControllerRef.current!);
     } catch (error) {
       handleError(error);
     } finally {
@@ -615,13 +675,21 @@ ${t("help.withAiAgent")}`,
     setRawMode(true);
 
     const handleKey = (key: Key) => {
-      // ESC: 如果正在处理中，取消当前任务；否则退出程序
+      // ESC: 如果正在处理中，取消当前任务；否则不做任何操作
       if (key.name === "escape") {
-        if (isProcessing || messagesRef.current.some(messageHasInterrupt)) {
+        // 防抖：100ms 内只处理一次 ESC 事件
+        const now = Date.now();
+        if (now - lastEscapeTimeRef.current < 100) {
+          return;
+        }
+        lastEscapeTimeRef.current = now;
+
+        // 检查是否正在处理中或有待处理的中断
+        const isCurrentlyProcessing = isProcessingRef.current;
+        const hasInterrupt = messagesRef.current.some(messageHasInterrupt);
+
+        if (isCurrentlyProcessing || hasInterrupt) {
           cancelCurrentTask();
-        } else {
-          exit();
-          setTimeout(() => process.exit(0), 100);
         }
         return;
       }
@@ -807,11 +875,14 @@ ${t("help.withAiAgent")}`,
       }
     };
 
-    const dataListener = createDataListener(handleKey);
+    const { listener: dataListener, cleanup: cleanupKeyListener } =
+      createDataListener(handleKey);
+    cleanupKeyListenerRef.current = cleanupKeyListener;
     stdin.on("data", dataListener);
 
     return () => {
       stdin.off("data", dataListener);
+      cleanupKeyListener();
     };
   }, [isProcessing, handleCommand, stdin, setRawMode, exit]);
 
