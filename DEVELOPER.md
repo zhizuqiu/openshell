@@ -6,12 +6,12 @@ English | [中文](./docs/manual/DEVELOPER.zh-CN.md)
 
 ## 🎯 Project Vision
 
-OpenShell is an **AI-powered Kubernetes operations assistant**. Users can interact with Kubernetes clusters using natural language, eliminating the need to memorize complex `kubectl` commands.
+OpenShell is an **AI-powered shell operations assistant**. Users can interact with their system using natural language, eliminating the need to memorize complex commands.
 
 **Core Features**:
 
 - 🤖 Natural Language Interaction (Supporting English and Chinese)
-- 🔧 Automatic Tool Calling (Dynamic resource discovery based on GVK)
+- 🔧 Automatic Tool Calling (Dynamic command execution)
 - 📡 Streaming Responses (Based on LangGraph updates mode)
 - 💻 Terminal Native UI (Built with Ink/React, supporting native terminal scrolling)
 
@@ -25,9 +25,8 @@ OpenShell is an **AI-powered Kubernetes operations assistant**. Users can intera
 graph TD
     User[(User)] <--> CLI[OpenShell CLI / Ink]
     CLI <--> Agent[LangChain Agent / LangGraph]
-    Agent <--> Tools[K8s Tools]
-    Tools <--> Client[Dynamic K8s Client]
-    Client <--> API[Kubernetes API]
+    Agent <--> Tools[Shell Tools]
+    Tools <--> System[System Commands]
 ```
 
 ### Project Structure (Flattened)
@@ -38,9 +37,9 @@ openshell/
 │   ├── core/                 # Core Library (ESM)
 │   │   ├── ai/               # AI Agent Logic
 │   │   │   ├── agent.ts      # Agent creation and streaming logic
-│   │   │   └── tools.ts      # Consolidated K8s tools
-│   │   ├── kubernetes/
-│   │   │   └── client.ts     # Dynamic K8s Client (GVK resolution)
+│   │   │   └── tools.ts      # Shell tools definition
+│   │   ├── session/          # Session management
+│   │   └── utils/            # Utility functions
 │   │   └── index.ts          # Unified exports
 │   └── ui/                   # CLI Application (React/Ink)
 │       ├── AppContainer.tsx     # Main UI and streaming handler
@@ -72,31 +71,33 @@ openshell/
 ### AI Layer
 
 - **LangChain**: `^1.2.10`
-- **LangGraph**: `1.1.1` (Manages Agent图 graph workflows)
+- **LangGraph**: `1.1.1` (Manages Agent graph workflows)
 - **OpenAI SDK**: `6.16.0`
 - **Zod**: `4.3.5` (Schema definition)
 
-### Kubernetes Layer
+### System Layer
 
-- **@kubernetes/client-node**: `1.4.0`
+- **Node.js child_process**: Native command execution
+- **@kubernetes/client-node**: `1.4.0` (Optional, for future K8s extensions)
 
 ---
 
 ## 🔑 Core Modules
 
-### 1. Dynamic Kubernetes Client (`client.ts`)
+### 1. Shell Tools (`tools.ts`)
 
-To support almost all Kubernetes resources (including Custom Resource Definitions - CRDs), we use a **dynamic client architecture**:
+The tool system provides command execution capabilities:
 
-- **GVK Resolution**: The `resolveResourceGVK` function resolves resource abbreviations into the correct apiVersion and Kind.
-- **Unstructured Operations**: Uses `KubernetesObjectApi` for operations, decoupled from specific models.
-- **Unified Interface**: Legacy redundant methods have been replaced by a consistent `listUnstructuredResources` approach.
+- **execute_command**: Cross-platform command execution (bash/zsh on Unix, PowerShell/cmd on Windows)
+- **Error Handling**: Returns user-friendly error messages
+- **Schema Validation**: Uses Zod for input parameter validation
 
 ### 2. AI Agent and Streaming (`agent.ts` & `AppContainer.tsx`)
 
 - **StreamMode**: Uses `updates` mode for real-time output from Agent nodes.
 - **Conversation Memory**: Integrated with `MemorySaver` for multi-turn context.
 - **Message Accumulation**: `AppContainer` updates the message state in the UI as streaming chunks are received.
+- **HITL (Human-in-the-Loop)**: Sensitive operations require user approval before execution.
 
 ## 🚀 Extension Guide
 
@@ -104,7 +105,8 @@ To support almost all Kubernetes resources (including Custom Resource Definition
 
 1. Define the tool using the `tool()` API in `src/core/ai/tools.ts`.
 2. Ensure input parameters are accurately described using `zod`.
-3. Add the new tool to the array returned by `createK8sTools`.
+3. Add the new tool to the array returned by `createShellTools`.
+4. For sensitive operations, add HITL configuration in `src/core/ai/agent.ts`.
 
 ### Adjusting UI Styles
 
@@ -127,11 +129,12 @@ npm start          # Start interactive CLI
 
 ## 📝 Changelog
 
-| Version | Date    | Major Updates                                                                             |
-| ------- | ------- | ----------------------------------------------------------------------------------------- |
-| 0.1.0   | 2026-01 | **Initial Release**: Streaming output, dynamic K8s resource discovery, bilingual support. |
-| 0.1.2   | 2026-01 | **UX Enhancement**: Cursor navigation, command history, multi-turn memory.                |
+| Version | Date    | Major Updates                                                                      |
+| ------- | ------- | ---------------------------------------------------------------------------------- |
+| 0.1.0   | 2026-01 | **Initial Release**: Streaming output, shell command execution, bilingual support. |
+| 0.1.2   | 2026-01 | **UX Enhancement**: Cursor navigation, command history, multi-turn memory.         |
+| 1.0.0   | 2026-03 | **General Purpose Shell**: Migrated from K8s-specific to general shell operations. |
 
 ---
 
-_Last Updated: 2026-01-21_
+_Last Updated: 2026-03-12_

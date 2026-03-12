@@ -2,11 +2,20 @@
 
 ## 📦 项目概述
 
-OpenShell 是一个基于 AI 的 Kubernetes CLI 工具，使用 Ink（终端 React）、LangChain 和 TypeScript 构建。
+OpenShell 是一个基于 AI 的通用 Shell CLI 工具，使用 Ink（终端 React）、LangChain 和 TypeScript 构建。
 
 **包名**: `@zhizuqiu/openshell`  
 **Node**: >=20.0.0  
 **模块**: ESM (`"type": "module"`)
+
+**项目历史**: 本项目从 Kubernetes 助手迁移为通用 Shell 助手。迁移后需确保所有 K8s 相关的文档、代码、变量名已更新为通用 Shell 术语。
+
+**核心技术栈**:
+
+- **UI**: Ink 6.6.0 + React 19.2.0 + Yargs 17.7.2
+- **AI**: LangChain 1.2.10 + LangGraph 1.1.1 + OpenAI SDK 6.16.0
+- **系统**: Node.js 原生模块 + @kubernetes/client-node 1.4.0 (可选)
+- **验证**: Zod 4.3.5
 
 ---
 
@@ -49,6 +58,8 @@ npx vitest run src/path/to/file.test.ts
 npx vitest run -t "测试名称模式"
 ```
 
+**测试文件命名**：`*.test.ts` 或 `*.test.tsx`
+
 ---
 
 ## 📝 代码风格
@@ -61,18 +72,37 @@ npx vitest run -t "测试名称模式"
 
 ### TypeScript
 
-- **启用严格模式** - 禁止 `any`，需要显式类型
+**严格模式配置** (`tsconfig.json`):
+
+- `strict: true` - 启用所有严格类型检查
+- `noImplicitAny: true` - 禁止隐式 any
+- `noImplicitReturns: true` - 确保所有代码路径都有返回值
+- `strictNullChecks: true` - 严格的空值检查
+- `verbatimModuleSyntax: true` - 强制正确的 ESM 导入语法
+
+**类型规范**:
+
 - 使用 `unknown` 在类型收窄前代替 `any`
 - 对象形状优先使用 interface，联合类型使用 type
-- 所有函数参数和返回值必须有类型
+- 所有函数参数和返回值必须有显式类型
+- 测试文件排除在编译外 (`**/*.test.ts`)
 
 ### 命名规范
 
 - **文件**：camelCase（如 `tools.ts`, `AppContainer.tsx`）
-- **类**：PascalCase（如 `KubernetesClient`）
-- **函数/变量**：camelCase（如 `createK8sTools`）
-- **常量**：UPPER_SNAKE_CASE（如 `DEFAULT_NAMESPACE`）
+- **类**：PascalCase（如 `ShellClient`）
+- **函数/变量**：camelCase（如 `createShellTools`）
+- **常量**：UPPER_SNAKE_CASE（如 `DEFAULT_COMMAND`）
 - **类型/接口**：PascalCase（如 `AgentConfig`）
+
+**迁移规范**: 本项目已从 K8s 助手迁移为通用 Shell 助手。遇到以下 K8s 相关命名时应更新为通用术语：
+
+- `k8s` / `kubernetes` → `system`（如 `k8sConnected` → `systemReady`）
+- `kubectl` → 具体命令或 `command`
+- `K8s Tools` → `Shell Tools`
+- `createK8sTools` → `createShellTools`
+- `k8sContext` → `systemContext` 或 `host`
+- `namespace` → `user` 或 `directory`
 
 ### 格式化 (Prettier)
 
@@ -94,6 +124,15 @@ npx vitest run -t "测试名称模式"
   }
   ```
 
+### ESLint 配置
+
+- 基于 `typescript-eslint` + `eslint-plugin-react` + `eslint-plugin-react-hooks`
+- 忽略模式：`dist/`, `node_modules/`, `*.tsbuildinfo`
+- 规则：
+  - `react/react-in-jsx-scope`: off (React 19 不需要)
+  - `react/prop-types`: off (使用 TypeScript)
+  - `@typescript-eslint/no-unused-vars`: 允许 `_` 前缀的参数
+
 ### React/Ink 组件
 
 - 使用带 TypeScript 的函数式组件
@@ -110,8 +149,6 @@ src/
 │   ├── ai/
 │   │   ├── agent.ts      # LangChain agent 创建
 │   │   └── tools.ts      # 工具定义
-│   ├── kubernetes/
-│   │   └── client.ts     # 动态 K8s 客户端
 │   ├── session/          # 会话管理
 │   └── utils/            # 工具函数
 ├── ui/
@@ -122,6 +159,45 @@ src/
 ├── i18n.ts               # 国际化
 └── index.ts              # CLI 入口
 ```
+
+---
+
+## 🏛️ 架构设计
+
+### 核心模块
+
+1. **AI Agent** (`src/core/ai/agent.ts`)
+   - 使用 LangChain `createAgent` 和 LangGraph 管理对话流程
+   - 集成 `MemorySaver` 支持多轮对话上下文
+   - HITL (Human-in-the-Loop) 机制确保敏感操作需用户确认
+
+2. **工具系统** (`src/core/ai/tools.ts`)
+   - 使用 `tool()` API 定义工具
+   - Zod schema 验证输入参数
+   - 错误处理返回用户友好消息
+
+3. **流式 UI** (`src/ui/AppContainer.tsx`)
+   - 基于 Ink/React 的终端 UI
+   - 使用 `updates` 模式实时输出 Agent 响应
+   - 自定义键盘解析器确保输入稳定性
+
+4. **会话管理** (`src/core/session/session.ts`)
+   - 管理对话历史和状态
+   - 支持多轮上下文记忆
+
+---
+
+## ⚙️ 配置
+
+### 环境变量 (.env)
+
+| 变量               | 必需 | 说明            | 默认值                      |
+| ------------------ | ---- | --------------- | --------------------------- |
+| `OPENAI_API_KEY`   | 是   | AI 模型 API Key | -                           |
+| `OPENAI_API_MODEL` | 否   | 模型名称        | `gpt-4o`                    |
+| `OPENAI_BASE_URL`  | 否   | 自定义 API 端点 | `https://api.openai.com/v1` |
+
+配置文件位置：项目根目录 `.env` 或 `~/.openshell/.env`
 
 ---
 
@@ -162,7 +238,7 @@ src/
 
 1. 在 `src/core/ai/tools.ts` 中使用 `tool()` API 定义
 2. 使用 Zod 进行 schema 验证
-3. 添加到 `createK8sTools` 返回数组
+3. 添加到 `createShellTools` 返回数组
 4. 敏感操作需在 `src/core/ai/agent.ts` 的 HITL 中添加：
    ```typescript
    execute_command: {
@@ -176,7 +252,7 @@ src/
 ## 🌍 国际化
 
 - 使用 `src/i18n.ts` 中的 `t()` 函数
-- 键名使用点号表示法：`kubernetes.patchSuccess`
+- 键名使用点号表示法：`app.ready`、`status.enabled`
 - 支持英语和中文
 
 ---

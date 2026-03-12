@@ -2,26 +2,25 @@
 
 # OpenShell
 
-🚀 **OpenShell** 是一个基于 AI 驱动的顶级 Kubernetes 运维助手终端工具，使用 [Ink](https://github.com/vadimdemedes/ink) 和 [LangChain](https://github.com/langchain-ai/langchainjs) 构建。
+🚀 **OpenShell** 是一个基于 AI 驱动的顶级 Shell 运维助手终端工具，使用 [Ink](https://github.com/vadimdemedes/ink) 和 [LangChain](https://github.com/langchain-ai/langchainjs) 构建。
 
-使用自然语言直接管理您的 Kubernetes 集群。无需再苦记复杂的 `kubectl` 参数——只需提问，让 AI 在“人类在环”安全机制的保护下为您处理繁重任务。
+使用自然语言直接管理系统。无需再苦记复杂的命令——只需提问，让 AI 在"人类在环"安全机制的保护下为您处理繁重任务。
 
 ## ✨ 核心特性
 
-- 🤖 **自然语言智能**：轻松查询资源（“有哪些节点准备就绪？”）或直接修改（“将我的 deployment 扩容到 3 个副本”）。
+- 🤖 **自然语言智能**：轻松查询系统信息（"有哪些进程在运行？"）或直接修改文件（"创建 config.yaml 的备份"）。
 - 📡 **稳健的流式 UI**：实时展示 AI 的推理和输出，提供流畅、无闪烁的顶级终端交互体验。
-- 🛡️ **人类在环 (HITL)**：安全第一。敏感操作（创建、修改、删除）必须经过用户的显式批准。
-- ⚡ **自主模式**：通过 `Ctrl+A` 快速切换“自主执行”，让 AI 无需干扰地执行操作（适用于信任的环境）。
+- 🛡️ **人类在环 (HITL)**：安全第一。敏感操作（文件修改、系统变更）必须经过用户的显式批准。
+- ⚡ **自主模式**：通过 `Ctrl+A` 快速切换"自主执行"，让 AI 无需干扰地执行操作（适用于信任的环境）。
 - 🧩 **深层类型安全**：基于严格的 TypeScript 构建，并与 LangChain/LangGraph 官方 Schema 对齐，可靠性极高。
 - ⌨️ **输入稳定性**：自定义键盘解析器确保即使在高速流式输出期间也不会丢失用户输入的字符。
-- 🔍 **动态资源发现**：通过动态 Kubernetes 客户端解析，支持标准资源和各类 CRD。
+- 🔍 **动态命令执行**：支持跨平台命令（Unix 上的 bash/zsh，Windows 上的 PowerShell/cmd）。
 
 ## 🚀 快速开始
 
 ### 前提条件
 
 - **Node.js**: >= 20.0.0
-- **Kubernetes**: 具有有效的 `~/.kube/config` 配置
 
 ### 全局安装
 
