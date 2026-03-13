@@ -72,9 +72,95 @@ OpenShell supports environment variables via `.env` files (Project root or `~/.c
 ## 🕹️ Controls
 
 - **Enter**: Send message
+- **! (at start)**: Enter Shell Mode (direct command execution)
+- **Esc**: Exit Shell Mode / Cancel current task
 - **Ctrl+A**: Toggle Autonomous Mode (Auto-execute)
-- **Arrow Up/Down**: Command history
+- **Arrow Up/Down**: Command history (separate for Agent/Shell modes)
 - **Ctrl+C**: Exit
+
+### 🐚 Shell Mode
+
+Press `!` at the beginning of the input box to enter **Shell Mode** for direct command execution:
+
+```
+[Shell] > ls -la    # Press Enter to execute directly, no AI involved
+[Shell] > git status
+[Shell] > pwd
+```
+
+- **Enter**: Execute command immediately
+- **Esc** or **Backspace (at position 0)**: Exit Shell Mode back to Agent Mode
+- Command history is separate from Agent Mode
+- Auto-exits to Agent Mode after command execution
+
+## 📁 Configuration File
+
+### Location
+
+OpenShell reads configuration from `.env` files in the following order (first match wins):
+
+1. `~/.config/openshell/.env` (Global config, recommended)
+2. `./.env` (Project-level config)
+
+### Setup
+
+```bash
+# Create global config directory
+mkdir -p ~/.config/openshell
+
+# Create and edit config file
+vim ~/.config/openshell/.env
+```
+
+### Example Configuration
+
+```bash
+# Required: AI model API Key
+OPENAI_API_KEY=your-api-key-here
+
+# Optional: Model name (default: gpt-4o)
+OPENAI_API_MODEL=gpt-4o
+
+# Optional: Custom API endpoint
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Optional: UI language (zh-CN or en-US, default: en-US)
+OPENSHHELL_LANG=en-US
+```
+
+### Using Different AI Providers
+
+**OpenAI:**
+
+```bash
+OPENAI_API_KEY=sk-xxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_MODEL=gpt-4o
+```
+
+**Azure OpenAI:**
+
+```bash
+OPENAI_API_KEY=your-azure-key
+OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/your-deployment
+OPENAI_API_MODEL=gpt-4o
+```
+
+**Local Models (Ollama, etc.):**
+
+```bash
+OPENAI_API_KEY=ollama
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_MODEL=llama3
+```
+
+**Other Providers (DeepSeek, Moonshot, etc.):**
+
+```bash
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_API_MODEL=deepseek-chat
+```
 
 ## 📄 License
 

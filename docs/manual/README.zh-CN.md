@@ -72,9 +72,95 @@ OpenShell 支持通过 `.env` 文件配置环境变量（项目根目录或 `~/.
 ## 🕹️ 交互方式
 
 - **Enter**: 发送消息
+- **! (起始位置)**: 进入 Shell 模式（直接执行命令）
+- **Esc**: 退出 Shell 模式 / 取消当前任务
 - **Ctrl+A**: 切换自主执行模式 (Auto-execute)
-- **Arrow Up/Down**: 浏览命令历史
+- **Arrow Up/Down**: 浏览命令历史（Agent/Shell 模式分离）
 - **Ctrl+C**: 退出程序
+
+### 🐚 Shell 模式
+
+在输入框起始位置按 `!` 进入 **Shell 模式**，直接执行命令：
+
+```
+[Shell] > ls -la    # 按 Enter 直接执行，不经过 AI
+[Shell] > git status
+[Shell] > pwd
+```
+
+- **Enter**: 立即执行命令
+- **Esc** 或 **Backspace (起始位置)**: 退出 Shell 模式，返回 Agent 模式
+- 命令历史与 Agent 模式分离
+- 命令执行后自动返回 Agent 模式
+
+## 📁 配置文件
+
+### 配置文件位置
+
+OpenShell 按以下顺序读取 `.env` 配置文件（优先使用第一个匹配项）：
+
+1. `~/.config/openshell/.env`（全局配置，推荐）
+2. `./.env`（项目级配置）
+
+### 设置方法
+
+```bash
+# 创建全局配置目录
+mkdir -p ~/.config/openshell
+
+# 创建并编辑配置文件
+vim ~/.config/openshell/.env
+```
+
+### 配置示例
+
+```bash
+# 必需：AI 模型 API Key
+OPENAI_API_KEY=your-api-key-here
+
+# 可选：模型名称（默认：gpt-4o）
+OPENAI_API_MODEL=gpt-4o
+
+# 可选：自定义 API 接口地址
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# 可选：UI 语言（zh-CN 或 en-US，默认：en-US）
+OPENSHHELL_LANG=zh-CN
+```
+
+### 使用不同的 AI 提供商
+
+**OpenAI:**
+
+```bash
+OPENAI_API_KEY=sk-xxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_MODEL=gpt-4o
+```
+
+**Azure OpenAI:**
+
+```bash
+OPENAI_API_KEY=your-azure-key
+OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/your-deployment
+OPENAI_API_MODEL=gpt-4o
+```
+
+**本地模型 (Ollama 等):**
+
+```bash
+OPENAI_API_KEY=ollama
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_MODEL=llama3
+```
+
+**其他提供商 (DeepSeek、月之暗面等):**
+
+```bash
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_API_MODEL=deepseek-chat
+```
 
 ## 📄 许可证
 
