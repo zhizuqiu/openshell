@@ -10,6 +10,7 @@ import {
 import { MemorySaver } from "@langchain/langgraph";
 import type { ReactAgent } from "langchain";
 import { createShellTools } from "./tools.js";
+import os from "os";
 
 export interface AgentConfig {
   apiKey: string;
@@ -91,7 +92,14 @@ Wait for each tool to complete before calling the next one.
 ## Token Efficiency
 
 - Be concise: Use minimal tokens when calling tools
-- Avoid redundancy: Don't repeat command output in your response`;
+- Avoid redundancy: Don't repeat command output in your response
+
+## System Information
+
+- Current Working Directory: ${process.cwd()}
+- Operating System: ${os.platform()} (${os.arch()})
+- Default Shell: ${os.userInfo().shell || "sh"}
+- Home Directory: ${os.homedir()}`;
 
   const agent = createAgent({
     model,
