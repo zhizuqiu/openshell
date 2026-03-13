@@ -39,6 +39,7 @@ interface Translations {
     versionCommand: string;
     clearCommand: string;
     exitCommand: string;
+    commandCommand: string;
     withAiAgent: string;
     exampleQueries: string[];
     aiWillUseTools: string;
@@ -102,6 +103,7 @@ const translations: Record<Language, Translations> = {
       versionCommand: "显示版本信息",
       clearCommand: "清除消息历史",
       exitCommand: "退出应用程序",
+      commandCommand: "查看后台命令列表",
       withAiAgent: "启用 AI Agent 后，您可以：",
       exampleQueries: [
         '"列出当前目录下的所有文件并统计行数"',
@@ -172,6 +174,7 @@ const translations: Record<Language, Translations> = {
       versionCommand: "Show version information",
       clearCommand: "Clear message history",
       exitCommand: "Exit the application",
+      commandCommand: "List background commands",
       withAiAgent: "With AI Agent enabled, you can:",
       exampleQueries: [
         '"list all files in current directory and count lines"',

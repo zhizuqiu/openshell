@@ -8,6 +8,7 @@ import { createDataListener } from "./input/key-parser.js";
 import type { Key } from "./input/key-parser.js";
 import { createShellAgent } from "../core/index.js";
 import { killAllProcesses } from "../core/ai/tools.js";
+import { getCommandManager } from "../core/session/command-manager.js";
 import { t } from "../i18n.js";
 import { MessageComponent } from "./MessageComponent.js";
 import type {
@@ -287,12 +288,46 @@ export function AppContainer({ config }: AppContainerProps) {
   /help    - ${t("help.helpCommand")}
   /version - ${t("help.versionCommand")}
   /clear   - ${t("help.clearCommand")}
+  /command - ${t("help.commandCommand")}
   /exit    - ${t("help.exitCommand")}
   
 ${t("help.withAiAgent")}`,
             timestamp: new Date(),
           },
         ]);
+        return;
+      }
+
+      if (cmd === "command") {
+        const commandManager = getCommandManager();
+        const commands = commandManager.listCommands();
+
+        if (commands.length === 0) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: Role.ASSISTANT,
+              content: "No background commands found.",
+              timestamp: new Date(),
+            },
+          ]);
+        } else {
+          const summary = commands
+            .map(
+              (c) =>
+                `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`,
+            )
+            .join("\n");
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: Role.ASSISTANT,
+              content: `Background Commands (${commands.length}):\n${summary}`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
         return;
       }
     }
