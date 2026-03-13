@@ -49,7 +49,7 @@ openshell/
 ├── docs/manual/              # Manuals and non-default language docs
 ├── scripts/                  # Operations scripts
 ├── package.json              # Project configuration
-└── ~/.openshell/.env           # Global config (OPENAI_API_KEY, etc.)
+└── ~/.config/openshell/.env    # Global config (OPENAI_API_KEY, OPENSHHELL_LANG, etc.)
 ```
 
 ---

@@ -191,13 +191,14 @@ src/
 
 ### 环境变量 (.env)
 
-| 变量               | 必需 | 说明            | 默认值                      |
-| ------------------ | ---- | --------------- | --------------------------- |
-| `OPENAI_API_KEY`   | 是   | AI 模型 API Key | -                           |
-| `OPENAI_API_MODEL` | 否   | 模型名称        | `gpt-4o`                    |
-| `OPENAI_BASE_URL`  | 否   | 自定义 API 端点 | `https://api.openai.com/v1` |
+| 变量               | 必需 | 说明                         | 默认值                      |
+| ------------------ | ---- | ---------------------------- | --------------------------- |
+| `OPENAI_API_KEY`   | 是   | AI 模型 API Key              | -                           |
+| `OPENAI_API_MODEL` | 否   | 模型名称                     | `gpt-4o`                    |
+| `OPENAI_BASE_URL`  | 否   | 自定义 API 端点              | `https://api.openai.com/v1` |
+| `OPENSHHELL_LANG`  | 否   | UI 语言 (`zh-CN` 或 `en-US`) | `en-US`                     |
 
-配置文件位置：项目根目录 `.env` 或 `~/.openshell/.env`
+配置文件位置：项目根目录 `.env` 或 `~/.config/openshell/.env`
 
 ---
 

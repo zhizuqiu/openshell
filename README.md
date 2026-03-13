@@ -56,13 +56,14 @@ npm start
 
 ## ⚙️ Configuration
 
-OpenShell supports environment variables via `.env` files (Project root or `~/.openshell/.env`).
+OpenShell supports environment variables via `.env` files (Project root or `~/.config/openshell/.env`).
 
 | Variable           | Required | Description                         | Default                     |
 | :----------------- | :------- | :---------------------------------- | :-------------------------- |
 | `OPENAI_API_KEY`   | **Yes**  | AI model API Key                    | -                           |
 | `OPENAI_API_MODEL` | No       | Model name (e.g., qwen-max, gpt-4o) | `gpt-4o`                    |
 | `OPENAI_BASE_URL`  | No       | Custom provider endpoint            | `https://api.openai.com/v1` |
+| `OPENSHHELL_LANG`  | No       | UI language (`zh-CN` or `en-US`)    | `en-US`                     |
 
 ## 🕹️ Controls
 

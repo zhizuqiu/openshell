@@ -56,13 +56,14 @@ npm start
 
 ## ⚙️ 环境变量配置
 
-OpenShell 支持通过 `.env` 文件配置环境变量（项目根目录或 `~/.openshell/.env`）。
+OpenShell 支持通过 `.env` 文件配置环境变量（项目根目录或 `~/.config/openshell/.env`）。
 
 | 变量名             | 必选   | 描述                           | 默认值                      |
 | :----------------- | :----- | :----------------------------- | :-------------------------- |
 | `OPENAI_API_KEY`   | **是** | AI 模型 API Key                | -                           |
 | `OPENAI_API_MODEL` | 否     | 模型名称 (如 qwen-max, gpt-4o) | `gpt-4o`                    |
 | `OPENAI_BASE_URL`  | 否     | 自定义提供商接口地址           | `https://api.openai.com/v1` |
+| `OPENSHHELL_LANG`  | 否     | UI 语言 (`zh-CN` 或 `en-US`)   | `en-US`                     |
 
 ## 🕹️ 交互方式
 

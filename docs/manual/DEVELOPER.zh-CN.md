@@ -49,7 +49,7 @@ openshell/
 ├── docs/manual/              # 用户手册与非默认语言文档
 ├── scripts/                  # 运维辅助脚本
 ├── package.json              # 项目配置文件
-└── ~/.openshell/.env           # 全局配置 (OPENAI_API_KEY 等)
+└── ~/.config/openshell/.env    # 全局配置 (OPENAI_API_KEY, OPENSHHELL_LANG 等)
 ```
 
 ---
