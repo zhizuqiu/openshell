@@ -60,7 +60,9 @@ npm start
 
 ## ⚙️ Configuration
 
-OpenShell supports environment variables via `.env` files (Project root or `~/.config/openshell/.env`).
+OpenShell supports two configuration methods: **Environment Variables** and **Configuration Files**.
+
+### Environment Variables
 
 | Variable           | Required | Description                         | Default                     |
 | :----------------- | :------- | :---------------------------------- | :-------------------------- |
@@ -68,6 +70,39 @@ OpenShell supports environment variables via `.env` files (Project root or `~/.c
 | `OPENAI_API_MODEL` | No       | Model name (e.g., qwen-max, gpt-4o) | `gpt-4o`                    |
 | `OPENAI_BASE_URL`  | No       | Custom provider endpoint            | `https://api.openai.com/v1` |
 | `OPENSHHELL_LANG`  | No       | UI language (`zh-CN` or `en-US`)    | `en-US`                     |
+
+### Configuration File
+
+OpenShell reads configuration from `.env` files in the following order (first match wins):
+
+1. `~/.config/openshell/.env` (Global config, recommended)
+2. `./.env` (Project-level config)
+
+**Setup:**
+
+```bash
+# Create global config directory
+mkdir -p ~/.config/openshell
+
+# Create and edit config file
+vim ~/.config/openshell/.env
+```
+
+**Example:**
+
+```bash
+# Required: AI model API Key
+OPENAI_API_KEY=your-api-key-here
+
+# Optional: Model name (default: gpt-4o)
+OPENAI_API_MODEL=gpt-4o
+
+# Optional: Custom API endpoint
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Optional: UI language (zh-CN or en-US, default: en-US)
+OPENSHHELL_LANG=en-US
+```
 
 ## 🕹️ Controls
 
@@ -92,75 +127,6 @@ Press `!` at the beginning of the input box to enter **Shell Mode** for direct c
 - **Esc** or **Backspace (at position 0)**: Exit Shell Mode back to Agent Mode
 - Command history is separate from Agent Mode
 - Auto-exits to Agent Mode after command execution
-
-## 📁 Configuration File
-
-### Location
-
-OpenShell reads configuration from `.env` files in the following order (first match wins):
-
-1. `~/.config/openshell/.env` (Global config, recommended)
-2. `./.env` (Project-level config)
-
-### Setup
-
-```bash
-# Create global config directory
-mkdir -p ~/.config/openshell
-
-# Create and edit config file
-vim ~/.config/openshell/.env
-```
-
-### Example Configuration
-
-```bash
-# Required: AI model API Key
-OPENAI_API_KEY=your-api-key-here
-
-# Optional: Model name (default: gpt-4o)
-OPENAI_API_MODEL=gpt-4o
-
-# Optional: Custom API endpoint
-OPENAI_BASE_URL=https://api.openai.com/v1
-
-# Optional: UI language (zh-CN or en-US, default: en-US)
-OPENSHHELL_LANG=en-US
-```
-
-### Using Different AI Providers
-
-**OpenAI:**
-
-```bash
-OPENAI_API_KEY=sk-xxx
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_MODEL=gpt-4o
-```
-
-**Azure OpenAI:**
-
-```bash
-OPENAI_API_KEY=your-azure-key
-OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/your-deployment
-OPENAI_API_MODEL=gpt-4o
-```
-
-**Local Models (Ollama, etc.):**
-
-```bash
-OPENAI_API_KEY=ollama
-OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_API_MODEL=llama3
-```
-
-**Other Providers (DeepSeek, Moonshot, etc.):**
-
-```bash
-OPENAI_API_KEY=your-api-key
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_API_MODEL=deepseek-chat
-```
 
 ## 📄 License
 
