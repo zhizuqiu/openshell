@@ -47,6 +47,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const [cursorPosition, setCursorPosition] = useState(0); // 当前光标在输入框中的位置
   const [isProcessing, setIsProcessing] = useState(false); // 是否正在处理 AI 流，用于锁定输入和显示加载状态
   const [agent, setAgent] = useState<ReactAgent | null>(null); // LangChain Agent 实例
+  const [mode, setMode] = useState<"agent" | "shell">("agent"); // 当前模式：agent(AI 对话) 或 shell(直接执行命令)
 
   const [autoExecute, setAutoExecute] = useState(true); // 自主执行模式开关，开启后将跳过 HITL 审批
   const [runningCommands, setRunningCommands] = useState(0); // 正在运行的后台任务数量
@@ -122,7 +123,8 @@ export function AppContainer({ config }: AppContainerProps) {
   const inputValueRef = useRef(inputValue);
   const cursorRef = useRef(cursorPosition);
 
-  const commandHistoryRef = useRef<string[]>([]);
+  const commandHistoryRef = useRef<string[]>([]); // agent 模式命令历史
+  const shellHistoryRef = useRef<string[]>([]); // shell 模式命令历史
   const historyIndexRef = useRef<number>(-1);
   const draftInputRef = useRef<string>("");
 
@@ -796,16 +798,116 @@ ${t("help.withAiAgent")}`,
       }
 
       const currentMessages = messagesRef.current;
+      const currentInputValue = inputValueRef.current;
+      const currentCursorPosition = cursorRef.current;
+      const currentMode = mode; // 捕获 mode 快照用于闭包
 
       // 检查是否有挂起的中断 (HITL 模式)
       const hasInterrupt = currentMessages.some(messageHasInterrupt);
 
+      // Shell 模式触发：在输入框起始位置输入 !
+      if (key.name === "!" && currentCursorPosition === 0 && mode === "agent") {
+        setMode("shell");
+        return;
+      }
+
+      // Shell 模式退出：Esc 或起始位置 Backspace
+      if (mode === "shell") {
+        if (
+          key.name === "escape" ||
+          (key.name === "backspace" && currentCursorPosition === 0)
+        ) {
+          setMode("agent");
+          return;
+        }
+
+        // Shell 模式回车执行
+        if (key.name === "return" || key.name === "enter") {
+          if (currentInputValue.trim()) {
+            const command = currentInputValue.trim();
+            shellHistoryRef.current.push(command);
+            historyIndexRef.current = -1;
+
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: Role.USER,
+                content: `! ${command}`,
+                timestamp: new Date(),
+              },
+            ]);
+
+            void (async () => {
+              try {
+                setIsProcessing(true);
+                isProcessingRef.current = true;
+
+                const commandManager = getCommandManager();
+                const { command_id, pid } = await commandManager.startCommand(
+                  command,
+                  "Shell mode command",
+                );
+
+                const checkStatus = async (): Promise<string> => {
+                  return new Promise((resolve) => {
+                    const check = () => {
+                      const cmd = commandManager.getCommand(command_id);
+                      if (!cmd) {
+                        resolve("Command not found");
+                        return;
+                      }
+                      if (cmd.status === "running") {
+                        setTimeout(check, 100);
+                        return;
+                      }
+                      const output =
+                        commandManager.getCommandOutput(command_id);
+                      resolve(output || `(exit code: ${cmd.exitCode})`);
+                    };
+                    check();
+                  });
+                };
+
+                const output = await checkStatus();
+
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: Role.ASSISTANT,
+                    content: `Command executed (PID: ${pid}):\n${output || "(no output)"}`,
+                    timestamp: new Date(),
+                  },
+                ]);
+              } catch (error) {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: Role.ASSISTANT,
+                    content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    timestamp: new Date(),
+                    error: true,
+                  },
+                ]);
+              } finally {
+                setIsProcessing(false);
+                isProcessingRef.current = false;
+                setMode("agent");
+              }
+            })();
+
+            inputValueRef.current = "";
+            cursorRef.current = 0;
+            setInputValue("");
+            setCursorPosition(0);
+          }
+          return;
+        }
+        return;
+      }
+
       // 状态锁机制：
       // 如果存在待处理的 HITL 中断或 AI 正在处理流，禁止普通文本输入，防止状态竞争
       if (hasInterrupt || isProcessing) return;
-
-      const currentInputValue = inputValueRef.current;
-      const currentCursorPosition = cursorRef.current;
 
       // Handle Return
       if (key.name === "return" || key.name === "enter") {
@@ -856,7 +958,11 @@ ${t("help.withAiAgent")}`,
           setSelectedIndex(nextIndex);
           return;
         }
-        const history = commandHistoryRef.current;
+        // 根据模式选择历史记录
+        const history =
+          currentMode === "shell"
+            ? shellHistoryRef.current
+            : commandHistoryRef.current;
         if (history.length === 0) return;
 
         if (historyIndexRef.current === -1) {
@@ -883,7 +989,11 @@ ${t("help.withAiAgent")}`,
           setSelectedIndex(nextIndex);
           return;
         }
-        const history = commandHistoryRef.current;
+        // 根据模式选择历史记录
+        const history =
+          currentMode === "shell"
+            ? shellHistoryRef.current
+            : commandHistoryRef.current;
         if (historyIndexRef.current === -1) return;
 
         if (historyIndexRef.current < history.length - 1) {
@@ -1153,6 +1263,10 @@ ${t("help.withAiAgent")}`,
               <Box flexDirection="row" alignItems="center" gap={1}>
                 <Text bold color="cyan">
                   🚀 OpenShell {config.version}
+                </Text>
+                <Text dimColor>|</Text>
+                <Text bold color={mode === "shell" ? "green" : "cyan"}>
+                  [{mode === "shell" ? "Shell" : "Agent"}]
                 </Text>
               </Box>
               <Box flexDirection="row" gap={2}>
