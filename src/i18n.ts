@@ -70,6 +70,14 @@ interface Translations {
     approveLabel: string;
     rejectLabel: string;
   };
+  tools: {
+    readFileName: string;
+    readFileDesc: string;
+    writeFileName: string;
+    writeFileDesc: string;
+    editFileName: string;
+    editFileDesc: string;
+  };
   shortcuts: {
     sendLabel: string;
     cancelLabel: string;
@@ -150,6 +158,14 @@ const translations: Record<Language, Translations> = {
     hitl: {
       approveLabel: "批准",
       rejectLabel: "拒绝",
+    },
+    tools: {
+      readFileName: "读取文件",
+      readFileDesc: "读取文件或目录内容",
+      writeFileName: "写入文件",
+      writeFileDesc: "创建或覆盖文件",
+      editFileName: "编辑文件",
+      editFileDesc: "智能替换文件内容",
     },
     shortcuts: {
       sendLabel: "发送",
@@ -237,6 +253,14 @@ const translations: Record<Language, Translations> = {
       approveLabel: "Approve",
       rejectLabel: "Reject",
     },
+    tools: {
+      readFileName: "Read File",
+      readFileDesc: "Read file or directory content",
+      writeFileName: "Write File",
+      writeFileDesc: "Create or overwrite file",
+      editFileName: "Edit File",
+      editFileDesc: "Smart replace file content",
+    },
     shortcuts: {
       sendLabel: "Send",
       cancelLabel: "Cancel",
@@ -284,11 +308,11 @@ class I18n {
 
   t(key: string): string {
     const keys = key.split(".");
-    let value: any = translations[this.currentLanguage];
+    let value: unknown = translations[this.currentLanguage];
 
     for (const k of keys) {
       if (value && typeof value === "object" && k in value) {
-        value = value[k];
+        value = (value as Record<string, unknown>)[k];
       } else {
         return key; // Return key if translation not found
       }
@@ -300,17 +324,17 @@ class I18n {
   // Get array translations
   tArray(key: string): string[] {
     const keys = key.split(".");
-    let value: any = translations[this.currentLanguage];
+    let value: unknown = translations[this.currentLanguage];
 
     for (const k of keys) {
       if (value && typeof value === "object" && k in value) {
-        value = value[k];
+        value = (value as Record<string, unknown>)[k];
       } else {
         return []; // Return empty array if translation not found
       }
     }
 
-    return Array.isArray(value) ? value : [];
+    return Array.isArray(value) ? (value as string[]) : [];
   }
 }
 

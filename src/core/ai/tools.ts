@@ -7,6 +7,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { spawn, type ChildProcess } from "child_process";
 import { getCommandManager } from "../session/command-manager.js";
+import { createFileTools } from "./file-tools.js";
 
 // Track running child processes for cleanup on exit
 const runningProcesses = new Map<ChildProcess, ProcessInfo>();
@@ -120,7 +121,7 @@ Use command_status to check progress, command_stop to stop it.`;
           const startTime = Date.now();
           let stdout = "";
           let stderr = "";
-          let isCancelled = false;
+          const isCancelled = false;
           let isTimedOut = false;
           let hasExited = false;
 
@@ -363,10 +364,13 @@ The process has been terminated. Use command_cleanup to remove the record.`;
     },
   );
 
+  const fileTools = createFileTools();
+
   return [
     runCommandTool,
     commandStatusTool,
     commandStopTool,
     commandCleanupTool,
+    ...fileTools,
   ];
 }

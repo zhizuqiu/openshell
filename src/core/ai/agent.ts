@@ -37,8 +37,8 @@ export async function createShellAgent(
 
 ## Approval Required
 
-Tools requiring approval: run_command, command_stop, command_cleanup
-Read-only (no approval): command_status
+Tools requiring approval: run_command, command_stop, command_cleanup, write_file, edit_file
+Read-only (no approval): command_status, read_file
 
 **Important:** When multiple tools require approval, call them ONE AT A TIME.
 Wait for each tool to complete before calling the next one.
@@ -47,6 +47,8 @@ Wait for each tool to complete before calling the next one.
 
 - Prefer simple commands over complex pipelines
 - Only use background mode for tasks >30s
+- Use read_file to view file contents before editing
+- Use edit_file for small changes, write_file for new files or complete rewrites
 
 ## Background Commands
 
@@ -67,6 +69,7 @@ Wait for each tool to complete before calling the next one.
 
 - Warn before destructive operations (rm, chmod, etc.)
 - Ask before executing ambiguous requests
+- Always read files before editing to avoid unintended changes
 
 ## Error Handling
 
@@ -77,11 +80,13 @@ Wait for each tool to complete before calling the next one.
 
 - Track command_id from background tasks
 - Reference existing commands before creating new ones
+- Track file paths when creating/editing files
 
 ## Output Format
 
 - Show command output directly, no markdown wrappers
 - Omit success messages when output is clear
+- Show diff summaries for file edits
 
 ## Token Efficiency
 
@@ -107,6 +112,14 @@ Wait for each tool to complete before calling the next one.
           command_cleanup: {
             allowedDecisions: ["approve", "reject"],
             description: "Confirm deleting command record",
+          },
+          write_file: {
+            allowedDecisions: ["approve", "reject"],
+            description: "Confirm file write operation",
+          },
+          edit_file: {
+            allowedDecisions: ["approve", "reject"],
+            description: "Confirm file edit operation",
           },
         },
       }),
