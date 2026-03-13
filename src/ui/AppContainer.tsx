@@ -49,6 +49,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const [agent, setAgent] = useState<ReactAgent | null>(null); // LangChain Agent 实例
 
   const [autoExecute, setAutoExecute] = useState(true); // 自主执行模式开关，开启后将跳过 HITL 审批
+  const [runningCommands, setRunningCommands] = useState(0); // 正在运行的后台任务数量
   const queryExecutedRef = useRef(false); // 确保在初始启动时的 query 指令只执行一次
   const activeStreamsRef = useRef(0); // 追踪当前活跃的流数量，防止并发冲突
   const isResumeRef = useRef(false); // 标记当前流是否为 HITL 审批后的恢复执行
@@ -92,6 +93,28 @@ export function AppContainer({ config }: AppContainerProps) {
   useEffect(() => {
     isProcessingRef.current = isProcessing;
   }, [isProcessing]);
+
+  // Update running commands count periodically
+  useEffect(() => {
+    const updateRunningCommands = () => {
+      try {
+        const commandManager = getCommandManager();
+        const commands = commandManager.listCommands();
+        const running = commands.filter((c) => c.status === "running").length;
+        setRunningCommands(running);
+      } catch {
+        setRunningCommands(0);
+      }
+    };
+
+    // Initial update
+    updateRunningCommands();
+
+    // Update every 2 seconds
+    const interval = setInterval(updateRunningCommands, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const { exit } = useApp();
   const { stdin, setRawMode } = useStdin();
@@ -1076,6 +1099,10 @@ ${t("help.withAiAgent")}`,
                   {t("status.autoExecuteLabel")}(Ctrl+A):{" "}
                   {autoExecute ? "✓" : "✗"}
                 </Text>
+                <Text color="magenta">
+                  | {t("status.runningLabel")}: {runningCommands}
+                </Text>
+                <Text color="magenta">| Running: {runningCommands}</Text>
               </Box>
             </Box>
             <Separator />

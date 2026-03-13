@@ -35,9 +35,6 @@ export async function createShellAgent(
 
   const systemMessage = `## Guidelines
 
-- One command at a time
-- Clean up completed commands
-
 ## Approval Required
 
 Tools requiring approval: run_command, command_stop, command_cleanup

@@ -61,6 +61,7 @@ interface Translations {
     disabled: string;
     connected: string;
     notSet: string;
+    runningLabel: string;
   };
   hitl: {
     approveLabel: string;
@@ -141,6 +142,7 @@ const translations: Record<Language, Translations> = {
       disabled: "已禁用",
       connected: "已就绪",
       notSet: "未设置",
+      runningLabel: "运行中",
     },
     hitl: {
       approveLabel: "批准",
@@ -223,6 +225,7 @@ const translations: Record<Language, Translations> = {
       disabled: "Disabled",
       connected: "Ready",
       notSet: "Not set",
+      runningLabel: "Running",
     },
     hitl: {
       approveLabel: "Approve",
