@@ -63,6 +63,9 @@ interface Translations {
     notSet: string;
     runningLabel: string;
   };
+  command: {
+    backgroundWarning: string;
+  };
   hitl: {
     approveLabel: string;
     rejectLabel: string;
@@ -154,6 +157,10 @@ const translations: Record<Language, Translations> = {
       historyLabel: "历史",
       exitLabel: "退出",
     },
+    command: {
+      backgroundWarning:
+        "⚠ 注意：OpenShell 退出时所有后台命令将被终止。\n  长时间运行的任务建议使用 nohup 或 screen。",
+    },
     errors: {
       initError: "初始化 agent 时出错",
       agentNotAvailable:
@@ -236,6 +243,10 @@ const translations: Record<Language, Translations> = {
       cancelLabel: "Cancel",
       historyLabel: "History",
       exitLabel: "Exit",
+    },
+    command: {
+      backgroundWarning:
+        "⚠ Note: All background commands will be terminated when OpenShell exits.\n  For long-running tasks, consider using nohup or screen.",
     },
     errors: {
       initError: "Error initializing agent",

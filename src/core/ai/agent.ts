@@ -45,6 +45,21 @@ Read-only (no approval): command_status
 - Prefer simple commands over complex pipelines
 - Only use background mode for tasks >30s
 
+## Background Commands
+
+**Use background mode when:**
+- Task runs >30 seconds
+- You want to track progress via command_status
+- You may need to stop it with command_stop
+- You want output buffered and viewable
+
+**Use nohup/screen when:**
+- Task must survive OpenShell exit
+- Task runs for hours/days
+- You don't need OpenShell to manage it
+
+**Important:** All background commands are terminated when OpenShell exits.
+
 ## Safety
 
 - Warn before destructive operations (rm, chmod, etc.)

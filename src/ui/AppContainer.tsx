@@ -346,7 +346,7 @@ ${t("help.withAiAgent")}`,
             ...prev,
             {
               role: Role.ASSISTANT,
-              content: `Background Commands (${commands.length}):\n${summary}`,
+              content: `Background Commands (${commands.length}):\n${summary}\n\n${t("command.backgroundWarning")}`,
               timestamp: new Date(),
             },
           ]);
@@ -1096,13 +1096,12 @@ ${t("help.withAiAgent")}`,
               </Box>
               <Box flexDirection="row" gap={2}>
                 <Text color="magenta">
+                  {t("status.runningLabel")}: {runningCommands} |
+                </Text>
+                <Text color="magenta">
                   {t("status.autoExecuteLabel")}(Ctrl+A):{" "}
                   {autoExecute ? "✓" : "✗"}
                 </Text>
-                <Text color="magenta">
-                  | {t("status.runningLabel")}: {runningCommands}
-                </Text>
-                <Text color="magenta">| Running: {runningCommands}</Text>
               </Box>
             </Box>
             <Separator />
