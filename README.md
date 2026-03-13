@@ -18,7 +18,7 @@ Interact with your system using natural language. No more memorizing complex com
 
 ## 📸 Demo
 
-<script src="https://asciinema.org/a/7tbFGLf4FiJQMRJ4.js" id="asciicast-7tbFGLf4FiJQMRJ4" async="true"></script>
+[![asciicast](https://asciinema.org/a/7tbFGLf4FiJQMRJ4.svg)](https://asciinema.org/a/7tbFGLf4FiJQMRJ4)
 
 ## 🚀 Quick Start
 

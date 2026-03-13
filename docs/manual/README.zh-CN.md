@@ -18,7 +18,7 @@
 
 ## 📸 演示
 
-<script src="https://asciinema.org/a/7tbFGLf4FiJQMRJ4.js" id="asciicast-7tbFGLf4FiJQMRJ4" async="true"></script>
+[![asciicast](https://asciinema.org/a/7tbFGLf4FiJQMRJ4.svg)](https://asciinema.org/a/7tbFGLf4FiJQMRJ4)
 
 ## 🚀 快速开始
 
