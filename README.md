@@ -16,6 +16,10 @@ Interact with your system using natural language. No more memorizing complex com
 - ⌨️ **Input Stability**: Custom keyboard parser ensures no character loss, even during high-frequency streaming.
 - 🔍 **Dynamic Command Execution**: Supports cross-platform commands (bash/zsh on Unix, PowerShell/cmd on Windows).
 
+## 📸 Demo
+
+![OpenShell Demo](./docs/demo.gif)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
