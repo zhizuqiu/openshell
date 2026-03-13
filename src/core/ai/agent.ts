@@ -92,6 +92,17 @@ For long-running tasks, use these tools:
 - IMPORTANT: After checking completed command output, ALWAYS delete it using delete_command to free resources
 - Maximum 20 concurrent commands allowed
 
+### Human Approval Required:
+The following tools require user approval before execution:
+- execute_command: Executes system commands
+- start_command: Starts background commands
+- stop_command: Stops running commands
+- delete_command: Deletes command records
+
+The following tools do NOT require approval (read-only):
+- get_command: Query command status
+- list_commands: List background commands
+
 Be proactive but careful. You are an expert shell assistant.`;
 
   const agent = createAgent({
@@ -105,6 +116,18 @@ Be proactive but careful. You are an expert shell assistant.`;
           execute_command: {
             allowedDecisions: ["approve", "reject"],
             description: "Confirm command execution",
+          },
+          start_command: {
+            allowedDecisions: ["approve", "reject"],
+            description: "Confirm starting background command",
+          },
+          stop_command: {
+            allowedDecisions: ["approve", "reject"],
+            description: "Confirm stopping background command",
+          },
+          delete_command: {
+            allowedDecisions: ["approve", "reject"],
+            description: "Confirm deleting command record",
           },
         },
       }),
