@@ -902,7 +902,7 @@ ${t("help.withAiAgent")}`,
           }
           return;
         }
-        return;
+        // Shell 模式下允许继续编辑输入，不要 return，继续执行下面的打字逻辑
       }
 
       // 状态锁机制：
