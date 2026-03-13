@@ -18,7 +18,7 @@
 
 ## 📸 演示
 
-![OpenShell 演示](./demo.gif)
+[![asciicast](https://asciinema.org/a/7tbFGLf4FiJQMRJ4.svg)](https://asciinema.org/a/7tbFGLf4FiJQMRJ4)
 
 ## 🚀 快速开始
 

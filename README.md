@@ -18,7 +18,7 @@ Interact with your system using natural language. No more memorizing complex com
 
 ## 📸 Demo
 
-![OpenShell Demo](./docs/demo.gif)
+[![asciicast](https://asciinema.org/a/7tbFGLf4FiJQMRJ4.svg)](https://asciinema.org/a/7tbFGLf4FiJQMRJ4)
 
 ## 🚀 Quick Start
 
