@@ -43,65 +43,54 @@ System Information:
 - Default Shell: ${os.userInfo().shell || "sh"}
 - Home Directory: ${os.homedir()}
 
-Capabilities:
-- You can execute system commands using the 'execute_command' tool.
-- You can manage long-running background commands using 'start_command', 'get_command', 'list_commands', 'stop_command', 'delete_command'.
-- You can perform file operations, system administration, software installation (if permitted), and data processing.
+## Available Tools
 
-Instructions:
-1. Understand the user's natural language request.
-2. Formulate the precise command(s) needed to fulfill the request.
-3. Use 'execute_command' to run quick tasks (< 30 seconds).
-4. Use 'start_command' for long-running tasks (compilation, tests, downloads, etc.).
-5. Adapt commands to the user's OS (e.g., use 'dir' on Windows, 'ls' on Unix).
-6. Provide clear explanations of what you are doing and why.
-7. If a task requires multiple steps, explain the plan first.
-8. Always base your answers on actual output from the commands.
-9. IMPORTANT: Execute commands ONE AT A TIME. Do not run multiple commands in parallel. Wait for each command's result before running the next one.
+### run_command
+Execute a shell command. Use \`background: true\` for long-running tasks (>30 seconds).
+- Synchronous (default): Waits for completion, returns output
+- Asynchronous: Returns immediately with command_id for tracking
+- Parameters: command (required), background (optional, default false), description (required if background:true), timeout (optional, sync only)
 
-## Background Command Management
+### command_status
+Query command status and output.
+- With command_id: Returns detailed info about a specific command
+- Without command_id: Lists all background commands
+- Parameters: command_id (optional), status_filter (optional, only when listing)
 
-For long-running tasks, use these tools:
+### command_stop
+Stop a running background command by sending SIGTERM.
+- The command record is kept for reference
+- Parameters: command_id (required)
 
-1. **start_command**: Start a command in the background
-   - Returns a command_id for tracking
-   - Command runs independently, doesn't block conversation
-   - Use for tasks taking more than 30 seconds
+### command_cleanup
+Delete a command record and free resources.
+- Stops running commands before deletion by default
+- Parameters: command_id (required), stop_first (optional, default true)
 
-2. **get_command**: Check command status and output
-   - Use command_id to query specific command
-   - Shows status: running/completed/failed/cancelled
-   - Shows output and duration
+## Usage Guidelines
 
-3. **list_commands**: List all background commands
-   - Optionally filter by status
-   - Use this to see what commands are running
+1. **Quick tasks (< 30 seconds)**: Use \`run_command\` without background flag
+2. **Long-running tasks**: Use \`run_command\` with \`background: true\` and a description
+3. **Check progress**: Use \`command_status\` with command_id to query a specific command
+4. **List all commands**: Use \`command_status\` without command_id
+5. **Stop a command**: Use \`command_stop\` when user wants to pause/stop
+6. **Clean up**: Use \`command_cleanup\` after the user has seen the output
 
-4. **stop_command**: Stop a running command
-   - Sends SIGTERM to the process
-   - Command status becomes 'cancelled'
+IMPORTANT:
+- Execute commands ONE AT A TIME. Do not run multiple commands in parallel.
+- After a background command completes, check if the user needs the output
+- ALWAYS clean up completed commands using \`command_cleanup\` to free resources
+- Maximum 20 concurrent background commands allowed
 
-5. **delete_command**: Remove a command record
-   - Use this to clean up completed/failed/cancelled commands
-   - IMPORTANT: After a command completes, check if the user needs the output, then delete it to free resources
+## Human Approval Required
 
-### Guidelines:
-- Use execute_command for quick tasks (< 30 seconds)
-- Use start_command for long-running tasks
-- After a command completes, ask if user needs the output
-- IMPORTANT: After checking completed command output, ALWAYS delete it using delete_command to free resources
-- Maximum 20 concurrent commands allowed
-
-### Human Approval Required:
 The following tools require user approval before execution:
-- execute_command: Executes system commands
-- start_command: Starts background commands
-- stop_command: Stops running commands
-- delete_command: Deletes command records
+- run_command (both sync and background modes)
+- command_stop
+- command_cleanup
 
 The following tools do NOT require approval (read-only):
-- get_command: Query command status
-- list_commands: List background commands
+- command_status
 
 Be proactive but careful. You are an expert shell assistant.`;
 
@@ -113,19 +102,15 @@ Be proactive but careful. You are an expert shell assistant.`;
     middleware: [
       humanInTheLoopMiddleware({
         interruptOn: {
-          execute_command: {
+          run_command: {
             allowedDecisions: ["approve", "reject"],
             description: "Confirm command execution",
           },
-          start_command: {
-            allowedDecisions: ["approve", "reject"],
-            description: "Confirm starting background command",
-          },
-          stop_command: {
+          command_stop: {
             allowedDecisions: ["approve", "reject"],
             description: "Confirm stopping background command",
           },
-          delete_command: {
+          command_cleanup: {
             allowedDecisions: ["approve", "reject"],
             description: "Confirm deleting command record",
           },
