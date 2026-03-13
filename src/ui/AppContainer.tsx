@@ -69,7 +69,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const selectedIndexRef = useRef(0);
   const cleanupKeyListenerRef = useRef<(() => void) | null>(null); // 存储 key listener 的 cleanup 函数
 
-  const ALL_COMMANDS = ["help", "version", "exit"];
+  const ALL_COMMANDS = ["help", "version", "exit", "command"];
 
   useEffect(() => {
     if (inputValue.startsWith("/")) {
