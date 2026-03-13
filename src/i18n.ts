@@ -62,6 +62,10 @@ interface Translations {
     connected: string;
     notSet: string;
   };
+  hitl: {
+    approveLabel: string;
+    rejectLabel: string;
+  };
   errors: {
     initError: string;
     agentNotAvailable: string;
@@ -84,7 +88,7 @@ const translations: Record<Language, Translations> = {
       agentError: "Agent 错误",
       systemNotConfigured: "⚠ 系统配置未就绪。",
       aiNotConfigured:
-        "⚠ AI 模型未配置。请在 .env 文件中设置 OPENAI_API_KEY、OPENAI_BASE_URL 和 OPENAI_API_MODEL。",
+        "⚠ AI 模型未配置。请在 ~/.config/openshell/.env 文件中设置 OPENAI_API_KEY、OPENAI_BASE_URL 和 OPENAI_API_MODEL。",
       builtInCommands: "您可以使用 /help 查看内置命令。",
       debugMode: "调试模式已启用",
       context: "环境",
@@ -132,10 +136,14 @@ const translations: Record<Language, Translations> = {
       connected: "已就绪",
       notSet: "未设置",
     },
+    hitl: {
+      approveLabel: "批准",
+      rejectLabel: "拒绝",
+    },
     errors: {
       initError: "初始化 agent 时出错",
       agentNotAvailable:
-        'AI Agent 不可用。请在 .env 文件中配置 OPENAI_API_KEY 和 OPENAI_BASE_URL。\n输入 "help" 查看可用命令。',
+        'AI Agent 不可用。请在 ~/.config/openshell/.env 文件中配置 OPENAI_API_KEY 和 OPENAI_BASE_URL。\n输入 "help" 查看可用命令。',
     },
   },
   en: {
@@ -155,7 +163,7 @@ const translations: Record<Language, Translations> = {
       agentError: "Agent error",
       systemNotConfigured: "⚠ System environment not ready.",
       aiNotConfigured:
-        "⚠ AI Model not configured. Set OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_API_MODEL in .env file.",
+        "⚠ AI Model not configured. Set OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_API_MODEL in ~/.config/openshell/.env file.",
       builtInCommands: "You can use /help to see built-in commands.",
       debugMode: "Debug mode enabled",
       context: "Env",
@@ -204,10 +212,14 @@ const translations: Record<Language, Translations> = {
       connected: "Ready",
       notSet: "Not set",
     },
+    hitl: {
+      approveLabel: "Approve",
+      rejectLabel: "Reject",
+    },
     errors: {
       initError: "Error initializing agent",
       agentNotAvailable:
-        'AI Agent not available. Please configure OPENAI_API_KEY and OPENAI_BASE_URL in .env file.\nType "help" for available commands.',
+        'AI Agent not available. Please configure OPENAI_API_KEY and OPENAI_BASE_URL in ~/.config/openshell/.env file.\nType "help" for available commands.',
     },
   },
 };

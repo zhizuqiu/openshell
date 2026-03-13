@@ -14,19 +14,15 @@ const __dirname = dirname(__filename);
 
 // 确定优先级路径
 const localEnvPath = join(__dirname, "..", ".env");
-const homeOpenshellEnvPath = join(os.homedir(), ".openshell", ".env");
-const homeEnvPath = join(os.homedir(), ".env");
+const homeOpenshellEnvPath = join(os.homedir(), ".config", "openshell", ".env");
 
 // 按优先级加载：
 // 1. 程序同级目录的 .env (适合本地开发)
-// 2. ~/.openshell/.env (适合全局安装，推荐)
-// 3. ~/.env (备用)
+// 2. ~/.config/openshell/.env (适合全局安装，推荐)
 if (fs.existsSync(localEnvPath)) {
   config({ path: localEnvPath, override: true, quiet: true });
 } else if (fs.existsSync(homeOpenshellEnvPath)) {
   config({ path: homeOpenshellEnvPath, override: true, quiet: true });
-} else if (fs.existsSync(homeEnvPath)) {
-  config({ path: homeEnvPath, override: true, quiet: true });
 }
 // 从ink库导入render函数，用于渲染终端UI
 import { render } from "ink";

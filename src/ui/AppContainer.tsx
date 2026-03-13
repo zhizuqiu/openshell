@@ -1006,9 +1006,16 @@ ${t("help.withAiAgent")}`,
               <Text dimColor>|</Text>
               <Box flexDirection="row" gap={1}>
                 <Text color="cyan" bold>
+                  Esc
+                </Text>
+                <Text dimColor>取消</Text>
+              </Box>
+              <Text dimColor>|</Text>
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyan" bold>
                   Ctrl+A
                 </Text>
-                <Text dimColor>自动模式</Text>
+                <Text dimColor>{t("status.autoExecuteLabel")}</Text>
               </Box>
               <Text dimColor>|</Text>
               <Box flexDirection="row" gap={1}>
@@ -1083,8 +1090,8 @@ ${t("help.withAiAgent")}`,
                   <Box marginTop={1}>
                     <SelectInput
                       items={[
-                        { label: "Approve", value: "approve" },
-                        { label: "Reject", value: "reject" },
+                        { label: t("hitl.approveLabel"), value: "approve" },
+                        { label: t("hitl.rejectLabel"), value: "reject" },
                       ]}
                       onSelect={(item) =>
                         handleDecision(
