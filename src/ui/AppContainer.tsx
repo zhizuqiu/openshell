@@ -981,26 +981,87 @@ ${t("help.withAiAgent")}`,
     (m) => m.streaming || messageHasInterrupt(m),
   );
 
-  // 获取当前待处理的中断信息
-  const pendingInterruptMessage = activeMessages.find(messageHasInterrupt);
-  let pendingInterrupt: Interrupt | null = null;
-  let pendingToolId: string = "";
+  // 获取当前待处理的所有中断信息（支持多工具同时审批）
+  const pendingInterruptMessages = activeMessages
+    .filter(messageHasInterrupt)
+    .flatMap((msg) => {
+      if (!Array.isArray(msg.content)) return [];
+      const blocks = msg.content as AssistantMessage[];
+      return blocks
+        .filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls)
+        .flatMap((b) => b.tool_calls || [])
+        .filter((tc) => tc.interrupt);
+    });
 
-  if (
-    pendingInterruptMessage &&
-    Array.isArray(pendingInterruptMessage.content)
-  ) {
-    const block = (pendingInterruptMessage.content as AssistantMessage[]).find(
-      (b) =>
-        b.type === MsgType.TOOL_CALL &&
-        b.tool_calls?.some((tc) => tc.interrupt),
+  // 渲染多工具审批 UI
+  const renderPendingApprovals = () => {
+    if (pendingInterruptMessages.length === 0) return null;
+
+    const handleSingleDecision = (
+      decision: "approve" | "reject",
+      toolId: string,
+      interrupt: Interrupt,
+    ) => {
+      handleDecision(decision, toolId, interrupt);
+    };
+
+    return (
+      <Box flexDirection="column" marginTop={1} marginBottom={1}>
+        <Text color="yellow" bold>
+          Review Required ({pendingInterruptMessages.length} actions):
+        </Text>
+        {pendingInterruptMessages.map((tc, index) => {
+          if (!tc.interrupt) return null;
+          return (
+            <Box
+              key={tc.id || index}
+              flexDirection="column"
+              marginLeft={2}
+              marginTop={1}
+              padding={1}
+              borderStyle="round"
+              borderColor="yellow"
+            >
+              <Text color="yellow" bold>
+                {index + 1}. {tc.name}
+              </Text>
+              <Text dimColor>
+                {Object.entries(tc.args)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(", ")}
+              </Text>
+              <Text color="yellow" dimColor>
+                {tc.interrupt.value?.action_requests?.[0]?.description ||
+                  "Action requires approval"}
+              </Text>
+              <Box marginTop={1}>
+                <SelectInput
+                  items={[
+                    { label: t("hitl.approveLabel"), value: "approve" },
+                    { label: t("hitl.rejectLabel"), value: "reject" },
+                  ]}
+                  onSelect={(item) =>
+                    handleSingleDecision(
+                      item.value as "approve" | "reject",
+                      tc.id || "",
+                      tc.interrupt!,
+                    )
+                  }
+                />
+              </Box>
+            </Box>
+          );
+        })}
+        {pendingInterruptMessages.length > 1 && (
+          <Box flexDirection="column" marginTop={1} marginLeft={2}>
+            <Text color="cyan" bold>
+              Tip: Approve or reject each action individually above.
+            </Text>
+          </Box>
+        )}
+      </Box>
     );
-    const tc = block?.tool_calls?.find((t) => t.interrupt);
-    if (tc) {
-      pendingInterrupt = tc.interrupt || null;
-      pendingToolId = tc.id || "";
-    }
-  }
+  };
 
   // --- 渲染逻辑 ---
   // 基于消息状态分两部分渲染：Static 组件用于持久化历史，普通 Box 用于显示动态更新和交互输入
@@ -1106,29 +1167,8 @@ ${t("help.withAiAgent")}`,
             </Box>
             <Separator />
             <Box flexDirection="column" marginTop={1} marginBottom={1}>
-              {pendingInterrupt ? (
-                <Box flexDirection="column">
-                  <Text color="yellow" bold>
-                    Review Required:{" "}
-                    {pendingInterrupt.value?.action_requests?.[0]
-                      ?.description || "Action requires approval"}
-                  </Text>
-                  <Box marginTop={1}>
-                    <SelectInput
-                      items={[
-                        { label: t("hitl.approveLabel"), value: "approve" },
-                        { label: t("hitl.rejectLabel"), value: "reject" },
-                      ]}
-                      onSelect={(item) =>
-                        handleDecision(
-                          item.value as "approve" | "reject",
-                          pendingToolId,
-                          pendingInterrupt,
-                        )
-                      }
-                    />
-                  </Box>
-                </Box>
+              {pendingInterruptMessages.length > 0 ? (
+                <Box flexDirection="column">{renderPendingApprovals()}</Box>
               ) : (
                 <Box flexDirection="row" alignItems="center">
                   <Text color={isProcessing ? "gray" : "white"} bold>

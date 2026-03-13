@@ -40,6 +40,9 @@ export async function createShellAgent(
 Tools requiring approval: run_command, command_stop, command_cleanup
 Read-only (no approval): command_status
 
+**Important:** When multiple tools require approval, call them ONE AT A TIME.
+Wait for each tool to complete before calling the next one.
+
 ## Tool Usage
 
 - Prefer simple commands over complex pipelines

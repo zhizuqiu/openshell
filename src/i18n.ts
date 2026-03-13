@@ -158,8 +158,7 @@ const translations: Record<Language, Translations> = {
       exitLabel: "退出",
     },
     command: {
-      backgroundWarning:
-        "⚠ 注意：OpenShell 退出时所有后台命令将被终止。\n  长时间运行的任务建议使用 nohup 或 screen。",
+      backgroundWarning: "⚠ 注意：OpenShell 退出时所有后台命令将被终止。",
     },
     errors: {
       initError: "初始化 agent 时出错",
@@ -246,7 +245,7 @@ const translations: Record<Language, Translations> = {
     },
     command: {
       backgroundWarning:
-        "⚠ Note: All background commands will be terminated when OpenShell exits.\n  For long-running tasks, consider using nohup or screen.",
+        "⚠ Note: All background commands will be terminated when OpenShell exits.",
     },
     errors: {
       initError: "Error initializing agent",
