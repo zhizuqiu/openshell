@@ -1,17 +1,18 @@
-import { Box, Text } from 'ink';
-import type { Message, AssistantMessage, ToolCall } from './types.js';
+import { Box, Text } from "ink";
+import { renderMarkdown } from "./markdown.js";
+import type { Message, AssistantMessage, ToolCall } from "./types.js";
 import {
   CustomMultiMessageRole as Role,
   AssistantMessageType as MsgType,
-} from './types.js';
+} from "./types.js";
 
 // 辅助函数：根据规则截断工具结果
 function truncateResult(result: string) {
-  const lines = result.split('\n');
+  const lines = result.split("\n");
   const isLong = result.length > 500 || lines.length > 3;
 
   if (isLong) {
-    let preview = lines.slice(0, 3).join('\n');
+    let preview = lines.slice(0, 3).join("\n");
     if (preview.length > 500) {
       preview = preview.substring(0, 500);
     }
@@ -25,7 +26,7 @@ function renderToolCallItem(toolCall: ToolCall) {
   const { name, args, result, id, interrupt } = toolCall;
   const argsString = JSON.stringify(args);
   const displayArgs =
-    argsString.length > 100 ? argsString.substring(0, 100) + '...' : argsString;
+    argsString.length > 100 ? argsString.substring(0, 100) + "..." : argsString;
 
   return (
     <Box flexDirection="column" key={id || name} marginBottom={1}>
@@ -50,13 +51,13 @@ function renderToolCallItem(toolCall: ToolCall) {
           marginBottom={1}
         >
           <Text color="yellow" bold>
-            Review Required:{' '}
+            Review Required:{" "}
             {interrupt.value?.action_requests?.[0]?.description ||
-              'Action requires approval'}
+              "Action requires approval"}
           </Text>
           <Text color="yellow" dimColor>
-            {' '}
-            (Pending review in input area below){' '}
+            {" "}
+            (Pending review in input area below){" "}
           </Text>
         </Box>
       )}
@@ -96,10 +97,10 @@ function renderAssistantContentBlock(
     return (
       <Box flexDirection="row" marginBottom={1} key={`text-${index}`}>
         <Box marginRight={1}>
-          <Text color={isError ? 'red' : 'white'}>●</Text>
+          <Text color={isError ? "red" : "white"}>●</Text>
         </Box>
         <Box flexDirection="column" flexGrow={1}>
-          <Text color={isError ? 'red' : 'white'}>{block.content}</Text>
+          <Text>{renderMarkdown(block.content || "")}</Text>
         </Box>
       </Box>
     );
@@ -141,10 +142,10 @@ export function MessageComponent({ message }: MessageComponentProps) {
           ) : (
             <Box flexDirection="row" marginBottom={1}>
               <Box marginRight={1}>
-                <Text color={error ? 'red' : 'white'}>●</Text>
+                <Text color={error ? "red" : "white"}>●</Text>
               </Box>
               <Box flexDirection="column" flexGrow={1}>
-                <Text color={error ? 'red' : 'white'}>{content as string}</Text>
+                <Text>{renderMarkdown(content as string)}</Text>
               </Box>
             </Box>
           )}
