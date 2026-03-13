@@ -5,16 +5,11 @@
 
 import { marked } from "marked";
 // @ts-ignore - marked-terminal types are incomplete
-import TerminalRenderer from "marked-terminal";
+import { markedTerminal } from "marked-terminal";
 
 // Configure marked with terminal renderer
-marked.use({
-  gfm: true,
-  breaks: true,
-});
-
-// @ts-ignore - types are outdated but runtime works
-marked.use(new TerminalRenderer());
+// @ts-ignore - types are incomplete but runtime works
+marked.use(markedTerminal());
 
 /**
  * Render markdown string to ANSI formatted text
