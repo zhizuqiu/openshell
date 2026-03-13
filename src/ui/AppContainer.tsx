@@ -1001,14 +1001,14 @@ ${t("help.withAiAgent")}`,
                 <Text color="cyan" bold>
                   Enter
                 </Text>
-                <Text dimColor>发送</Text>
+                <Text dimColor>{t("shortcuts.sendLabel")}</Text>
               </Box>
               <Text dimColor>|</Text>
               <Box flexDirection="row" gap={1}>
                 <Text color="cyan" bold>
                   Esc
                 </Text>
-                <Text dimColor>取消</Text>
+                <Text dimColor>{t("shortcuts.cancelLabel")}</Text>
               </Box>
               <Text dimColor>|</Text>
               <Box flexDirection="row" gap={1}>
@@ -1022,14 +1022,14 @@ ${t("help.withAiAgent")}`,
                 <Text color="cyan" bold>
                   ↑/↓
                 </Text>
-                <Text dimColor>历史</Text>
+                <Text dimColor>{t("shortcuts.historyLabel")}</Text>
               </Box>
               <Text dimColor>|</Text>
               <Box flexDirection="row" gap={1}>
                 <Text color="cyan" bold>
                   Ctrl+C
                 </Text>
-                <Text dimColor>退出</Text>
+                <Text dimColor>{t("shortcuts.exitLabel")}</Text>
               </Box>
             </Box>
           </Box>

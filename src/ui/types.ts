@@ -1,8 +1,8 @@
 // 定义 role enum
 export enum CustomMultiMessageRole {
-  SYSTEM = 'system',
-  USER = 'user',
-  ASSISTANT = 'assistant',
+  SYSTEM = "system",
+  USER = "user",
+  ASSISTANT = "assistant",
 }
 
 export interface Message {
@@ -25,8 +25,8 @@ export interface Message {
 
 // type enum 定义
 export enum AssistantMessageType {
-  TOOL_CALL = 'tool_call',
-  TEXT = 'text',
+  TOOL_CALL = "tool_call",
+  TEXT = "text",
 }
 
 // 当 CustomMultiMessage.role == "assistant" 时，content 的类型定义
@@ -65,7 +65,7 @@ interface ActionRequest {
 
 interface ReviewConfig {
   action_name: string;
-  allowed_decisions: ('approve' | 'edit' | 'reject')[];
+  allowed_decisions: ("approve" | "edit" | "reject")[];
 }
 
 interface InterruptValue {
@@ -97,9 +97,9 @@ export interface DecisionItem {
 }
 
 export enum DecisionType {
-  APPROVE = 'approve',
-  EDIT = 'edit',
-  REJECT = 'reject',
+  APPROVE = "approve",
+  EDIT = "edit",
+  REJECT = "reject",
 }
 
 export interface Config {
@@ -108,8 +108,9 @@ export interface Config {
   context?: string;
   namespace?: string;
   version: string;
-  query?: string; // 来自命令行的可选查询
-  interactive?: boolean; // 是否交互模式
+  query?: string;
+  interactive?: boolean;
+  lang: "zh-CN" | "en-US";
 }
 
 export interface AppContainerProps {

@@ -1,10 +1,10 @@
 /**
  * Internationalization (i18n) support
- * Supports Chinese (zh) and English (en)
- * Default: Chinese
+ * Supports Chinese (zh-CN) and English (en-US)
+ * Default: en-US
  */
 
-export type Language = "zh" | "en";
+export type Language = "zh-CN" | "en-US";
 
 interface Translations {
   app: {
@@ -66,6 +66,12 @@ interface Translations {
     approveLabel: string;
     rejectLabel: string;
   };
+  shortcuts: {
+    sendLabel: string;
+    cancelLabel: string;
+    historyLabel: string;
+    exitLabel: string;
+  };
   errors: {
     initError: string;
     agentNotAvailable: string;
@@ -73,7 +79,7 @@ interface Translations {
 }
 
 const translations: Record<Language, Translations> = {
-  zh: {
+  "zh-CN": {
     app: {
       title: "OpenShell - 自然语言命令行助手",
       version: "版本",
@@ -140,13 +146,19 @@ const translations: Record<Language, Translations> = {
       approveLabel: "批准",
       rejectLabel: "拒绝",
     },
+    shortcuts: {
+      sendLabel: "发送",
+      cancelLabel: "取消",
+      historyLabel: "历史",
+      exitLabel: "退出",
+    },
     errors: {
       initError: "初始化 agent 时出错",
       agentNotAvailable:
         'AI Agent 不可用。请在 ~/.config/openshell/.env 文件中配置 OPENAI_API_KEY 和 OPENAI_BASE_URL。\n输入 "help" 查看可用命令。',
     },
   },
-  en: {
+  "en-US": {
     app: {
       title: "OpenShell - Natural Language Command-Line Assistant",
       version: "Version",
@@ -216,6 +228,12 @@ const translations: Record<Language, Translations> = {
       approveLabel: "Approve",
       rejectLabel: "Reject",
     },
+    shortcuts: {
+      sendLabel: "Send",
+      cancelLabel: "Cancel",
+      historyLabel: "History",
+      exitLabel: "Exit",
+    },
     errors: {
       initError: "Error initializing agent",
       agentNotAvailable:
@@ -225,7 +243,23 @@ const translations: Record<Language, Translations> = {
 };
 
 class I18n {
-  private currentLanguage: Language = "zh";
+  private currentLanguage: Language;
+
+  constructor(lang?: Language) {
+    if (lang) {
+      this.currentLanguage = lang;
+    } else {
+      // Read from environment variable, default to en-US
+      const envLang = process.env["OPENSHHELL_LANG"];
+      this.currentLanguage = this.validateLanguage(envLang);
+    }
+  }
+
+  private validateLanguage(lang: string | undefined): Language {
+    if (lang === "zh-CN" || lang === "zh") return "zh-CN";
+    if (lang === "en-US" || lang === "en") return "en-US";
+    return "en-US"; // Default value
+  }
 
   setLanguage(lang: Language) {
     this.currentLanguage = lang;
@@ -267,8 +301,16 @@ class I18n {
   }
 }
 
-export const i18n = new I18n();
+// Lazy initialization - create instance on first use
+let i18nInstance: I18n | null = null;
+
+export const getI18n = (): I18n => {
+  if (!i18nInstance) {
+    i18nInstance = new I18n();
+  }
+  return i18nInstance;
+};
 
 // Helper functions for quick translation
-export const t = (key: string) => i18n.t(key);
-export const tArray = (key: string) => i18n.tArray(key);
+export const t = (key: string) => getI18n().t(key);
+export const tArray = (key: string) => getI18n().tArray(key);

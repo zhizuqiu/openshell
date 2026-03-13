@@ -97,6 +97,8 @@ export async function main() {
     version: getVersion(),
     // 用户查询内容
     query: query || undefined,
+    // 语言配置
+    lang: (process.env["OPENSHHELL_LANG"] as "zh-CN" | "en-US") || "en-US",
   };
 
   // 渲染主应用容器组件
