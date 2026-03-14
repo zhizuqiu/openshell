@@ -141,7 +141,7 @@ function renderAssistantContentBlock(
     return (
       <Box flexDirection="row" marginBottom={1} key={`text-${index}`}>
         <Box marginRight={1}>
-          <Text color={isError ? "red" : "white"}>●</Text>
+          <Text color={isError ? "red" : "cyan"}>✨</Text>
         </Box>
         <Box flexDirection="column" flexGrow={1}>
           <Text>{renderMarkdown(block.content || "")}</Text>
@@ -169,12 +169,20 @@ export function MessageComponent({ message }: MessageComponentProps) {
   return (
     <Box flexDirection="column">
       {role === Role.USER ? (
-        <Box flexDirection="row" marginBottom={1}>
+        <Box 
+          flexDirection="row" 
+          marginBottom={1} 
+          borderStyle="round" 
+          borderColor="cyan" 
+          borderDimColor={true}
+          paddingX={1}
+          width={(process.stdout.columns || 80) - 4}
+        >
           <Box marginRight={1}>
-            <Text bold color="white">{`>`}</Text>
+            <Text color="cyan" dimColor>{`>`}</Text>
           </Box>
           <Box flexDirection="column" flexGrow={1}>
-            <Text color="white">{content as string}</Text>
+            <Text color="white" wrap="wrap" dimColor>{content as string}</Text>
           </Box>
         </Box>
       ) : role === Role.ASSISTANT ? (
@@ -187,7 +195,7 @@ export function MessageComponent({ message }: MessageComponentProps) {
           ) : (
             <Box flexDirection="row" marginBottom={1}>
               <Box marginRight={1}>
-                <Text color={error ? "red" : "white"}>●</Text>
+                <Text color={error ? "red" : "cyan"}>✨</Text>
               </Box>
               <Box flexDirection="column" flexGrow={1}>
                 <Text>{renderMarkdown(content as string)}</Text>
@@ -197,9 +205,11 @@ export function MessageComponent({ message }: MessageComponentProps) {
           {streaming && (!Array.isArray(content) || content.length === 0) && (
             <Box flexDirection="row" marginBottom={1}>
               <Box marginRight={1}>
-                <Text color="white">●</Text>
+                <Text color="cyan">✨</Text>
               </Box>
-              <Text color="yellow">...</Text>
+              <Text color="yellow">
+                <Spinner type="dots" />
+              </Text>
             </Box>
           )}
         </Box>

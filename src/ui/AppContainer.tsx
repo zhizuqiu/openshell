@@ -29,21 +29,8 @@ import { Command } from "@langchain/langgraph";
 import type { ReactAgent } from "langchain";
 import { BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 
-function Separator({ width }: { width?: number }) {
-  return (
-    <Box
-      borderStyle="single"
-      borderTop={true}
-      borderBottom={false}
-      borderLeft={false}
-      borderRight={false}
-      height={1}
-      width={width}
-    />
-  );
-}
-
 export function AppContainer({ config }: AppContainerProps) {
+
   // --- 布局常量 ---
   const terminalWidth = process.stdout.columns || 80;
   const mainWidth = terminalWidth - 4; // 主容器宽度，对齐带边框的输入框
@@ -760,10 +747,10 @@ export function AppContainer({ config }: AppContainerProps) {
               message={msg}
             />
           ))}
-          <Box flexDirection="column" marginTop={activeMessages.length > 0 || stableMessages.length > 0 ? 1 : 0}>
+          <Box flexDirection="column" marginTop={1}>
             <Box flexDirection="row" justifyContent="space-between" width={mainWidth}>
               <Box flexDirection="row" alignItems="center" gap={1}>
-                <Text bold color="cyan">🚀 OpenShell {config.version}</Text>
+                <Text bold color="cyan">OpenShell {config.version}</Text>
                 <Text dimColor>|</Text>
                 <Text bold color={mode === "shell" ? "green" : "cyan"}>[{mode === "shell" ? "Shell" : "Agent"}]</Text>
               </Box>
@@ -772,8 +759,7 @@ export function AppContainer({ config }: AppContainerProps) {
                 <Text color="magenta">{t("status.autoExecuteLabel")}(Ctrl+A): {autoExecute ? "✓" : "✗"}</Text>
               </Box>
             </Box>
-            <Separator width={mainWidth} />
-            <Box flexDirection="column" marginTop={1} marginBottom={1}>
+            <Box flexDirection="column" marginTop={0} marginBottom={1}>
               {activeQuestionRequest ? (
                 <AskUserDialog request={activeQuestionRequest} onFinished={() => setActiveQuestionRequest(null)} />
               ) : pendingInterruptMessages.length > 0 ? (
@@ -793,7 +779,11 @@ export function AppContainer({ config }: AppContainerProps) {
                 </Box>
               )}
               <Box paddingX={2} marginTop={0} marginBottom={1} flexDirection="row" justifyContent="space-between" width={mainWidth}>
-                <Box><Text dimColor color="gray">🏠 {shortenPath(tildeifyPath(currentDir))}</Text></Box>
+                <Box>
+                  <Text dimColor color="gray">
+                    {shortenPath(tildeifyPath(currentDir))}
+                  </Text>
+                </Box>
                 <Box flexDirection="row">
                   {mode === "shell" && (
                     <Box marginRight={2}>
@@ -803,10 +793,11 @@ export function AppContainer({ config }: AppContainerProps) {
                     </Box>
                   )}
                   <Text dimColor color="blue">
-                    🤖 {modelName}
+                    {modelName}
                   </Text>
                 </Box>
               </Box>
+
               {suggestions.length > 0 && (
                 <Box flexDirection="column" marginTop={1} paddingLeft={2} borderStyle="round" borderColor="gray" width={innerWidth}>
                   {suggestions.map((cmd, idx) => (<Box key={cmd}><Text color={idx === selectedIndex ? "cyan" : "white"} bold={idx === selectedIndex}>{idx === selectedIndex ? "→ " : "  "}/{cmd}</Text></Box>))}
