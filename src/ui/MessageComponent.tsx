@@ -5,6 +5,7 @@ import type { Message, AssistantMessage, ToolCall } from "./types.js";
 import {
   CustomMultiMessageRole as Role,
   AssistantMessageType as MsgType,
+  ToolCallStatus,
 } from "./types.js";
 
 // 辅助函数：根据规则截断工具结果
@@ -24,7 +25,7 @@ function truncateResult(result: string) {
 
 // 渲染单个工具调用请求和结果
 function renderToolCallItem(toolCall: ToolCall, index: number, isStreaming?: boolean) {
-  const { name, args, result, id, interrupt } = toolCall;
+  const { name, args, result, id, interrupt, status } = toolCall;
   const argsString = JSON.stringify(args);
   const displayArgs =
     argsString.length > 100 ? argsString.substring(0, 100) + "..." : argsString;
@@ -33,34 +34,42 @@ function renderToolCallItem(toolCall: ToolCall, index: number, isStreaming?: boo
   const safeWidth = termWidth - 6;
 
   let statusIcon = <Text color="blue">●</Text>;
-  let borderColor = "gray";
-  let isCancelled = false;
-  let isError = false;
+  let borderColor = "white"; // 默认浅灰色
+  let isCancelled = status === ToolCallStatus.CANCELED;
+  let isError = status === ToolCallStatus.ERROR;
 
+  // 根据枚举状态设置 UI
+  switch (status) {
+    case ToolCallStatus.EXECUTING:
+      statusIcon = (
+        <Text color="cyan">
+          <Spinner type="dots" />
+        </Text>
+      );
+      borderColor = "cyan";
+      break;
+    case ToolCallStatus.SUCCESS:
+      statusIcon = <Text color="green">✓</Text>;
+      borderColor = "white"; // 浅灰色边框
+      break;
+    case ToolCallStatus.ERROR:
+      statusIcon = <Text color="red">✗</Text>;
+      borderColor = "red";
+      break;
+    case ToolCallStatus.CANCELED:
+      statusIcon = <Text color="gray">⊘</Text>;
+      borderColor = "white";
+      break;
+    case ToolCallStatus.PENDING:
+      statusIcon = <Text color="yellow">⏸</Text>;
+      borderColor = "yellow";
+      break;
+  }
+
+  // 补丁：处理旧数据或通过 interrupt 识别 PENDING
   if (interrupt) {
     statusIcon = <Text color="yellow">⏸</Text>;
     borderColor = "yellow";
-  } else if (result) {
-    isCancelled = result.includes("Command cancelled by user");
-    isError = result.startsWith("Error:") || result.includes("failed");
-    
-    if (isCancelled) {
-      statusIcon = <Text color="gray">⊘</Text>;
-      borderColor = "gray";
-    } else if (isError) {
-      statusIcon = <Text color="red">✗</Text>;
-      borderColor = "red";
-    } else {
-      statusIcon = <Text color="green">✓</Text>;
-      borderColor = "gray"; 
-    }
-  } else if (isStreaming) {
-    statusIcon = (
-      <Text color="cyan">
-        <Spinner type="dots" />
-      </Text>
-    );
-    borderColor = "cyan";
   }
 
   return (
@@ -70,6 +79,7 @@ function renderToolCallItem(toolCall: ToolCall, index: number, isStreaming?: boo
       marginBottom={1}
       borderStyle="round"
       borderColor={borderColor}
+      borderDimColor={true}
       paddingX={1}
       width={safeWidth}
     >
@@ -79,7 +89,7 @@ function renderToolCallItem(toolCall: ToolCall, index: number, isStreaming?: boo
         <Text bold strikethrough={isCancelled} color={isError ? "red" : undefined}>
           {name}
         </Text>
-        {isStreaming && !result && !interrupt && (
+        {status === ToolCallStatus.EXECUTING && (
           <Text dimColor italic> (running...)</Text>
         )}
       </Box>

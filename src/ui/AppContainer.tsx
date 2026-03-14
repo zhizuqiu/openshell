@@ -24,6 +24,7 @@ import type {
 import {
   CustomMultiMessageRole as Role,
   AssistantMessageType as MsgType,
+  ToolCallStatus,
 } from "./types.js";
 import { Command } from "@langchain/langgraph";
 import type { ReactAgent } from "langchain";
@@ -32,9 +33,8 @@ import { BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 export function AppContainer({ config }: AppContainerProps) {
 
   // --- 布局常量 ---
-  const terminalWidth = process.stdout.columns || 80;
-  const mainWidth = terminalWidth - 4; // 主容器宽度，对齐带边框的输入框
-  const innerWidth = terminalWidth - 6; // 内部卡片宽度
+  const mainWidth = "100%";
+  const innerWidth = "100%";
   const [isLoading, setIsLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -383,7 +383,15 @@ export function AppContainer({ config }: AppContainerProps) {
                 lastToolCallId = toolCalls[0]?.id || null;
                 const exists = assistantContent.some(block => block.type === MsgType.TOOL_CALL && block.tool_calls?.some(tc => tc.id === lastToolCallId));
                 if (!exists) {
-                  assistantContent.push({ type: MsgType.TOOL_CALL, tool_calls: toolCalls.map(tc => ({ id: tc.id || "", name: tc.name, args: tc.args })) });
+                  assistantContent.push({ 
+                    type: MsgType.TOOL_CALL, 
+                    tool_calls: toolCalls.map(tc => ({ 
+                      id: tc.id || "", 
+                      name: tc.name, 
+                      args: tc.args,
+                      status: ToolCallStatus.EXECUTING 
+                    })) 
+                  });
                 }
               }
             } else if (role === "tool") {
@@ -391,7 +399,30 @@ export function AppContainer({ config }: AppContainerProps) {
               for (const block of assistantContent) {
                 if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
                   const tc = block.tool_calls.find(t => t.id === toolId);
-                  if (tc) tc.result = content;
+                  if (tc) {
+                    // 尝试解析结构化结果
+                    try {
+                      const parsed = JSON.parse(content);
+                      if (parsed && typeof parsed === "object" && "status" in parsed && "output" in parsed) {
+                        tc.result = parsed.output;
+                        tc.status = parsed.status as ToolCallStatus;
+                      } else {
+                        throw new Error("Not a structured result");
+                      }
+                    } catch {
+                      // 回退到正则猜测逻辑（用于非结构化输出）
+                      tc.result = content;
+                      const isCancelled = content.includes("Command cancelled by user");
+                      const isError = /Error[:\s]/i.test(content) || 
+                                      content.toLowerCase().includes("failed") || 
+                                      content.includes("ENOENT") || 
+                                      content.includes("EACCES");
+                      
+                      if (isCancelled) tc.status = ToolCallStatus.CANCELED;
+                      else if (isError) tc.status = ToolCallStatus.ERROR;
+                      else tc.status = ToolCallStatus.SUCCESS;
+                    }
+                  }
                 }
               }
             }
@@ -694,7 +725,7 @@ export function AppContainer({ config }: AppContainerProps) {
         {pendingInterruptMessages.map((tc, index) => {
           if (!tc.interrupt) return null;
           return (
-            <Box key={tc.id || index} flexDirection="column" marginLeft={2} marginTop={1} padding={1} borderStyle="round" borderColor="yellow" width={innerWidth}>
+            <Box key={tc.id || index} flexDirection="column" marginLeft={2} marginTop={1} padding={1} borderStyle="round" borderColor="yellow" borderDimColor={true} width={innerWidth}>
               <Text color="yellow" bold>{index + 1}. {tc.name}</Text>
               <Text dimColor wrap="wrap">{Object.entries(tc.args).map(([k, v]) => `${k}: ${v}`).join(", ")}</Text>
               <Text color="yellow" dimColor wrap="wrap">{tc.interrupt.value?.action_requests?.[0]?.description || "Action requires approval"}</Text>
@@ -765,7 +796,7 @@ export function AppContainer({ config }: AppContainerProps) {
               ) : pendingInterruptMessages.length > 0 ? (
                 <Box flexDirection="column">{renderPendingApprovals()}</Box>
               ) : (
-                <Box flexDirection="row" paddingX={1} borderStyle="round" borderColor={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} alignItems="flex-start" width={mainWidth}>
+                <Box flexDirection="row" paddingX={1} borderStyle="round" borderColor={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} borderDimColor={true} alignItems="flex-start" width={mainWidth}>
                   <Text color={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} bold>{mode === "shell" ? "! " : "> "}</Text>
                   <Box flexGrow={1}>
                     {isProcessing ? (
@@ -799,7 +830,7 @@ export function AppContainer({ config }: AppContainerProps) {
               </Box>
 
               {suggestions.length > 0 && (
-                <Box flexDirection="column" marginTop={1} paddingLeft={2} borderStyle="round" borderColor="gray" width={innerWidth}>
+                <Box flexDirection="column" marginTop={1} paddingLeft={2} borderStyle="round" borderColor="gray" borderDimColor={true} width={innerWidth}>
                   {suggestions.map((cmd, idx) => (<Box key={cmd}><Text color={idx === selectedIndex ? "cyan" : "white"} bold={idx === selectedIndex}>{idx === selectedIndex ? "→ " : "  "}/{cmd}</Text></Box>))}
                 </Box>
               )}

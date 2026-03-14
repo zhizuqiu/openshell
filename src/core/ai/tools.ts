@@ -8,7 +8,7 @@ import { z } from "zod";
 import { spawn, type ChildProcess } from "child_process";
 import { getCommandManager } from "../session/command-manager.js";
 import { createFileTools } from "./file-tools.js";
-import { Question, type QuestionType } from "../question.js";
+import { Question } from "../question.js";
 
 // Track running child processes for cleanup on exit
 const runningProcesses = new Map<ChildProcess, ProcessInfo>();
@@ -24,6 +24,13 @@ interface ProcessInfo {
  */
 export function getRunningProcesses(): Map<ChildProcess, ProcessInfo> {
   return runningProcesses;
+}
+
+/**
+ * Helper to create standard structured tool response
+ */
+function createResult(status: "success" | "error" | "canceled", output: string) {
+  return JSON.stringify({ status, output });
 }
 
 /**
@@ -91,24 +98,20 @@ export function createShellTools() {
       const { command, background = false, description, timeout } = input;
 
       if (background) {
-        // Background mode - start command and return immediately
         if (!description) {
-          return "Error: 'description' is required when running in background mode.";
+          return createResult("error", "Error: 'description' is required when running in background mode.");
         }
 
         try {
-          const result = await commandManager.startCommand(
-            command,
-            description,
-          );
-          return `Command started in background:
+          const result = await commandManager.startCommand(command, description);
+          return createResult("success", `Command started in background:
 - Command ID: ${result.command_id}
 - Status: ${result.status}
 - PID: ${result.pid}
 
-Use command_status to check progress, command_stop to stop it.`;
+Use command_status to check progress, command_stop to stop it.`);
         } catch (error) {
-          return `Failed to start background command: ${error instanceof Error ? error.message : "Unknown error"}`;
+          return createResult("error", `Failed to start background command: ${error instanceof Error ? error.message : "Unknown error"}`);
         }
       } else {
         // Synchronous mode - wait for completion
@@ -122,177 +125,95 @@ Use command_status to check progress, command_stop to stop it.`;
           const startTime = Date.now();
           let stdout = "";
           let stderr = "";
-          const isCancelled = false;
           let isTimedOut = false;
           let hasExited = false;
 
-          const processInfo: ProcessInfo = {
-            command,
-            startTime,
-          };
+          const processInfo: ProcessInfo = { command, startTime };
           runningProcesses.set(child, processInfo);
 
-          // Handle timeout
           if (timeout && timeout > 0) {
             setTimeout(() => {
               if (!hasExited) {
                 isTimedOut = true;
                 try {
-                  if (child.pid) {
-                    try {
-                      process.kill(-child.pid, "SIGTERM");
-                    } catch {
-                      child.kill("SIGTERM");
-                    }
-                  } else {
-                    child.kill("SIGTERM");
-                  }
-                } catch {
-                  // Process already exited
-                }
+                  if (child.pid) process.kill(-child.pid, "SIGTERM");
+                  else child.kill("SIGTERM");
+                } catch {}
               }
             }, timeout);
           }
 
-          child.stdout.on("data", (data: Buffer) => {
-            stdout += data.toString();
-          });
-
-          child.stderr.on("data", (data: Buffer) => {
-            stderr += data.toString();
-          });
+          child.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
+          child.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
 
           child.on("close", (code: number | null) => {
             hasExited = true;
             runningProcesses.delete(child);
-
             const duration = Date.now() - startTime;
-            const metadata: string[] = [];
 
-            if (isCancelled) {
-              metadata.push(`Command cancelled by user after ${duration}ms`);
-            } else if (isTimedOut) {
-              metadata.push(`Command timed out after ${duration}ms`);
+            if (isTimedOut) {
+              return resolve(createResult("error", `Command timed out after ${duration}ms. Output so far:\n${stdout}\n${stderr}`));
             }
 
-            if (code !== null && code !== 0 && !isCancelled) {
-              metadata.push(`Exit code: ${code}`);
+            if (code !== 0) {
+              return resolve(createResult("error", `Command failed with exit code ${code}.\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`));
             }
 
-            let result = stdout || "Command executed successfully (no output)";
-
-            if (stderr && !stdout && !isCancelled) {
-              result = `Error: ${stderr}`;
-            }
-
-            if (metadata.length > 0) {
-              result += `\n\n<command_metadata>\n${metadata.join("\n")}\n</command_metadata>`;
-            }
-
-            resolve(result);
+            resolve(createResult("success", stdout || "Command executed successfully (no output)"));
           });
 
           child.on("error", (err: Error) => {
             hasExited = true;
             runningProcesses.delete(child);
-            resolve(`Error executing command: ${err.message}`);
+            resolve(createResult("error", `Error executing command: ${err.message}`));
           });
         });
       }
     },
     {
       name: "run_command",
-      description:
-        "Execute a shell command. Use background:true for long-running tasks (>30s). Synchronous by default.",
+      description: "Execute a shell command. Use background:true for long-running tasks (>30s).",
       schema: z.object({
         command: z.string().describe("The command to execute"),
-        background: z
-          .boolean()
-          .optional()
-          .describe(
-            "Run in background (true) or wait for completion (false, default)",
-          ),
-        description: z
-          .string()
-          .optional()
-          .describe(
-            "Required when background:true - describes what the command does",
-          ),
-        timeout: z
-          .number()
-          .optional()
-          .describe(
-            "Timeout in milliseconds (only applies to synchronous mode)",
-          ),
+        background: z.boolean().optional().describe("Run in background"),
+        description: z.string().optional().describe("Required for background mode"),
+        timeout: z.number().optional().describe("Timeout in ms"),
       }),
     },
   );
 
   /**
-   * command_status - Query command status (single or list)
+   * command_status - Query command status
    */
   const commandStatusTool = tool(
     async (input: { command_id?: string; status_filter?: string }) => {
       const { command_id, status_filter } = input || {};
 
       if (command_id) {
-        // Single command details
         const cmd = commandManager.getCommand(command_id);
-        if (!cmd) {
-          return `Command not found: ${command_id}`;
-        }
+        if (!cmd) return createResult("error", `Command not found: ${command_id}`);
 
-        const output =
-          commandManager.getCommandOutput(command_id) || "(no output yet)";
-        const durationSec = (cmd.duration / 1000).toFixed(1);
-
-        return `Command Details:
+        const output = commandManager.getCommandOutput(command_id) || "(no output yet)";
+        return createResult("success", `Command Details:
 - ID: ${cmd.id}
-- Command: ${cmd.command}
-- Description: ${cmd.description}
 - Status: ${cmd.status}
-- Duration: ${durationSec}s
-- Exit Code: ${cmd.exitCode ?? "N/A"}
-
-Output:
-${output}`;
+- Output:
+${output}`);
       } else {
-        // List all commands
         const commands = commandManager.listCommands(status_filter);
-
-        if (commands.length === 0) {
-          return status_filter
-            ? `No commands found with status: ${status_filter}`
-            : "No background commands found.";
-        }
-
-        const summary = commands
-          .map(
-            (c) =>
-              `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`,
-          )
-          .join("\n");
-
-        return `Background Commands (${commands.length}):\n${summary}`;
+        if (commands.length === 0) return createResult("success", "No background commands found.");
+        const summary = commands.map(c => `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command}`).join("\n");
+        return createResult("success", `Background Commands (${commands.length}):\n${summary}`);
       }
     },
     {
       name: "command_status",
-      description:
-        "Query command status. Provide command_id for details, omit for list of all commands.",
+      description: "Query background command status.",
       schema: z.object({
-        command_id: z
-          .string()
-          .optional()
-          .describe("Command ID to query (omit to list all)"),
-        status_filter: z
-          .string()
-          .optional()
-          .describe(
-            "Filter by status when listing (running/completed/failed/cancelled)",
-          ),
+        command_id: z.string().optional(),
+        status_filter: z.string().optional(),
       }),
-    },
+    }
   );
 
   /**
@@ -301,79 +222,42 @@ ${output}`;
   const commandStopTool = tool(
     async ({ command_id }: { command_id: string }) => {
       const result = commandManager.stopCommand(command_id);
-
-      if (result.status === "not_found") {
-        return `Command not found or not running: ${command_id}`;
-      }
-
-      return `Command stopped: ${command_id}
-Status: cancelled
-
-The process has been terminated. Use command_cleanup to remove the record.`;
+      if (result.status === "not_found") return createResult("error", `Command not found: ${command_id}`);
+      return createResult("success", `Command stopped: ${command_id}`);
     },
     {
       name: "command_stop",
-      description:
-        "Stop a running background command by sending SIGTERM. The record is kept for reference.",
-      schema: z.object({
-        command_id: z.string().describe("The command ID to stop"),
-      }),
-    },
+      description: "Stop a background command.",
+      schema: z.object({ command_id: z.string() }),
+    }
   );
 
   /**
-   * command_cleanup - Delete command record (stops first if running)
+   * command_cleanup - Delete command record
    */
   const commandCleanupTool = tool(
     async (input: { command_id: string; stop_first?: boolean }) => {
       const { command_id, stop_first = true } = input;
-
-      // Check if command exists and is running
       const cmd = commandManager.getCommand(command_id);
-      if (!cmd) {
-        return `Command not found: ${command_id}`;
-      }
-
-      // Stop first if running and stop_first is true
-      if (cmd.status === "running" && stop_first) {
-        commandManager.stopCommand(command_id);
-      }
-
-      // Delete the record
+      if (!cmd) return createResult("error", `Command not found: ${command_id}`);
+      if (cmd.status === "running" && stop_first) commandManager.stopCommand(command_id);
       const result = commandManager.deleteCommand(command_id);
-
-      if (result.success) {
-        return `Command cleaned up: ${command_id}
-- Record deleted
-- Process ${cmd.status === "running" ? "was stopped and " : ""}removed
-- Resources freed`;
-      }
-
-      return `Failed to clean up command: ${command_id}`;
+      return result.success ? createResult("success", `Cleaned up: ${command_id}`) : createResult("error", `Failed: ${command_id}`);
     },
     {
       name: "command_cleanup",
-      description:
-        "Delete a command record. Stops running commands before deletion by default.",
-      schema: z.object({
-        command_id: z.string().describe("The command ID to clean up"),
-        stop_first: z
-          .boolean()
-          .optional()
-          .describe("Stop running command before deletion (default: true)"),
-      }),
-    },
+      description: "Delete command record.",
+      schema: z.object({ command_id: z.string(), stop_first: z.boolean().optional() }),
+    }
   );
 
-  const fileTools = createFileTools();
-
   /**
-   * ask_user - Ask the user questions for clarification
+   * ask_user - Ask user questions for clarification
    */
   const askUserTool = tool(
     async (input: {
       questions: Array<{
-        type: QuestionType;
+        type: "text" | "choice" | "yesno";
         question: string;
         header: string;
         options?: Array<{ label: string; description: string }>;
@@ -382,36 +266,16 @@ The process has been terminated. Use command_cleanup to remove the record.`;
       }>;
     }) => {
       const { questions } = input;
-
       if (!questions || questions.length === 0) {
-        return "Error: At least one question is required.";
+        return createResult("error", "At least one question required.");
       }
 
-      const requestId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
+      const requestId = `q_${Date.now()}`;
       try {
-        const answers = await Question.ask({
-          id: requestId,
-          questions: questions.map((q) => ({
-            type: q.type,
-            question: q.question,
-            header: q.header,
-            options: q.options,
-            multiple: q.multiple ?? false,
-            placeholder: q.placeholder,
-          })),
-        });
-
-        const formattedAnswers = questions
-          .map((q, i) => {
-            const answerList = answers[i] || [];
-            return `"${q.question}"="${answerList.join(", ") || "(no answer)"}"`;
-          })
-          .join("; ");
-
-        return `User provided answers: ${formattedAnswers}. Proceed with this context.`;
+        const answers = await Question.ask({ id: requestId, questions });
+        return createResult("success", `Answers: ${JSON.stringify(answers)}`);
       } catch (error) {
-        return `User dismissed the question without answering or an error occurred: ${error instanceof Error ? error.message : "Unknown error"}`;
+        return createResult("canceled", "User dismissed the question.");
       }
     },
     {
@@ -422,34 +286,20 @@ The process has been terminated. Use command_cleanup to remove the record.`;
         questions: z
           .array(
             z.object({
-              type: z
-                .enum(["text", "choice", "yesno"])
-                .describe("Question type"),
+              type: z.enum(["text", "choice", "yesno"]).describe("Question type"),
               question: z.string().describe("The actual question to ask"),
-              header: z
-                .string()
-                .describe(
-                  "Short label for this question (e.g. 'Config', 'Confirmation')"
-                ),
+              header: z.string().describe("Short label for this question"),
               options: z
                 .array(
                   z.object({
                     label: z.string().describe("Concise label"),
-                    description: z
-                      .string()
-                      .describe("Detailed choice explanation"),
+                    description: z.string().describe("Detailed choice explanation"),
                   })
                 )
                 .optional()
-                .describe("Options for 'choice' type (2-5 recommended)"),
-              multiple: z
-                .boolean()
-                .optional()
-                .describe("Allow multiple selection for choice type"),
-              placeholder: z
-                .string()
-                .optional()
-                .describe("Hint text for text type"),
+                .describe("Options for 'choice' type"),
+              multiple: z.boolean().optional().describe("Allow multiple selection"),
+              placeholder: z.string().optional().describe("Hint for text type"),
             })
           )
           .min(1)
@@ -458,12 +308,7 @@ The process has been terminated. Use command_cleanup to remove the record.`;
     }
   );
 
-  return [
-    runCommandTool,
-    commandStatusTool,
-    commandStopTool,
-    commandCleanupTool,
-    askUserTool,
-    ...fileTools,
-  ];
+  const fileTools = createFileTools();
+
+  return [runCommandTool, commandStatusTool, commandStopTool, commandCleanupTool, askUserTool, ...fileTools];
 }

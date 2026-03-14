@@ -186,12 +186,6 @@ const ReviewView: React.FC<{
           );
         })}
       </Box>
-      <Box marginTop={1} flexDirection="column">
-        <Text color="gray" dimColor>
-          Tab/Shift+Tab/← to edit answers | Esc to cancel
-        </Text>
-        <Text color="cyan" bold>Press Enter to submit everything</Text>
-      </Box>
     </Box>
   );
 };
@@ -255,7 +249,7 @@ export const AskUserDialog: React.FC<{
 
   if (isReviewMode) {
     return (
-      <Box flexDirection="column" padding={1} borderStyle="round" borderColor="cyan" width={(process.stdout.columns || 80) - 4}>
+      <Box flexDirection="column" padding={1} borderStyle="round" borderColor="cyan" borderDimColor={true} width={(process.stdout.columns || 80) - 4}>
         <TabHeader questions={request.questions} currentIndex={currentIndex} answeredIndices={answeredIndices} />
         <ReviewView questions={request.questions} answers={answers} onSubmit={handleFinalSubmit} />
         <Box marginTop={1} flexDirection="column">
@@ -271,7 +265,7 @@ export const AskUserDialog: React.FC<{
   const q = request.questions[currentIndex]!;
   
   return (
-    <Box flexDirection="column" padding={1} borderStyle="round" borderColor="cyan" width={(process.stdout.columns || 80) - 4}>
+    <Box flexDirection="column" padding={1} borderStyle="round" borderColor="cyan" borderDimColor={true} width={(process.stdout.columns || 80) - 4}>
       <TabHeader questions={request.questions} currentIndex={currentIndex} answeredIndices={answeredIndices} />
       
       {q.type === "text" && (

@@ -40,6 +40,14 @@ export interface AssistantMessage {
   content?: string;
 }
 
+export enum ToolCallStatus {
+  PENDING = "pending",
+  EXECUTING = "executing",
+  SUCCESS = "success",
+  ERROR = "error",
+  CANCELED = "canceled",
+}
+
 // 工具请求和结果的类型定义
 export interface ToolCall {
   name: string;
@@ -52,6 +60,7 @@ export interface ToolCall {
   interrupt?: Interrupt;
   decisions?: Decisions;
   result?: string;
+  status?: ToolCallStatus;
 }
 
 // 接口中 Interrupt 定义
