@@ -99,7 +99,13 @@ Wait for each tool to complete before calling the next one.
 - Current Working Directory: ${process.cwd()}
 - Operating System: ${os.platform()} (${os.arch()})
 - Default Shell: ${os.userInfo().shell || "sh"}
-- Home Directory: ${os.homedir()}`;
+- Home Directory: ${os.homedir()}
+
+## File Operation Priority
+
+Always prefer operating on files within the Current Working Directory (${process.cwd()}).
+When the user request is ambiguous about file paths, assume they mean files relative to this directory.
+Only access files outside this directory when explicitly requested.`;
 
   const agent = createAgent({
     model,

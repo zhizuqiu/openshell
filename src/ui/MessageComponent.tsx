@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import Spinner from "ink-spinner";
 import { renderMarkdown } from "./markdown.js";
 import type { Message, AssistantMessage, ToolCall } from "./types.js";
 import {
@@ -22,54 +23,97 @@ function truncateResult(result: string) {
 }
 
 // 渲染单个工具调用请求和结果
-function renderToolCallItem(toolCall: ToolCall) {
+function renderToolCallItem(toolCall: ToolCall, index: number, isStreaming?: boolean) {
   const { name, args, result, id, interrupt } = toolCall;
   const argsString = JSON.stringify(args);
   const displayArgs =
     argsString.length > 100 ? argsString.substring(0, 100) + "..." : argsString;
 
+  const termWidth = process.stdout.columns || 80;
+  const safeWidth = termWidth - 6;
+
+  let statusIcon = <Text color="blue">●</Text>;
+  let borderColor = "gray";
+  let isCancelled = false;
+  let isError = false;
+
+  if (interrupt) {
+    statusIcon = <Text color="yellow">⏸</Text>;
+    borderColor = "yellow";
+  } else if (result) {
+    isCancelled = result.includes("Command cancelled by user");
+    isError = result.startsWith("Error:") || result.includes("failed");
+    
+    if (isCancelled) {
+      statusIcon = <Text color="gray">⊘</Text>;
+      borderColor = "gray";
+    } else if (isError) {
+      statusIcon = <Text color="red">✗</Text>;
+      borderColor = "red";
+    } else {
+      statusIcon = <Text color="green">✓</Text>;
+      borderColor = "gray"; 
+    }
+  } else if (isStreaming) {
+    statusIcon = (
+      <Text color="cyan">
+        <Spinner type="dots" />
+      </Text>
+    );
+    borderColor = "cyan";
+  }
+
   return (
-    <Box flexDirection="column" key={id || name} marginBottom={1}>
-      {/* 工具请求 */}
+    <Box
+      flexDirection="column"
+      key={id || `tool-item-${index}`}
+      marginBottom={1}
+      borderStyle="round"
+      borderColor={borderColor}
+      paddingX={1}
+      width={safeWidth}
+    >
+      {/* Header & Tool Name */}
       <Box flexDirection="row" marginBottom={0}>
-        <Box marginRight={1}>
-          <Text color="blue">●</Text>
-        </Box>
-        <Box flexDirection="column" flexGrow={1}>
-          <Text color="blue">
-            {name}({displayArgs})
-          </Text>
-        </Box>
+        <Box marginRight={1}>{statusIcon}</Box>
+        <Text bold strikethrough={isCancelled} color={isError ? "red" : undefined}>
+          {name}
+        </Text>
+        {isStreaming && !result && !interrupt && (
+          <Text dimColor italic> (running...)</Text>
+        )}
       </Box>
 
-      {/* HITL 决策提示 (仅展示状态) */}
+      {/* Arguments */}
+      <Box marginLeft={3} flexDirection="column">
+        <Text dimColor wrap="wrap" strikethrough={isCancelled}>
+          {displayArgs}
+        </Text>
+      </Box>
+
+      {/* HITL 决策提示 */}
       {interrupt && (
         <Box
           flexDirection="column"
-          marginLeft={2}
-          marginTop={0}
-          marginBottom={1}
+          marginLeft={3}
+          marginTop={1}
         >
           <Text color="yellow" bold>
-            Review Required:{" "}
-            {interrupt.value?.action_requests?.[0]?.description ||
-              "Action requires approval"}
+            ⚠ Action requires your approval
           </Text>
-          <Text color="yellow" dimColor>
-            {" "}
-            (Pending review in input area below){" "}
+          <Text color="yellow" dimColor italic>
+            {interrupt.value?.action_requests?.[0]?.description || "Please review and decide in the input area."}
           </Text>
         </Box>
       )}
 
       {/* 工具结果 */}
-      {result && (
-        <Box flexDirection="column" marginLeft={2}>
-          <Box flexDirection="row">
-            <Text color="gray"> ⎿ </Text>
-            <Box flexDirection="column" paddingRight={2}>
-              <Text dimColor>{truncateResult(result)}</Text>
-            </Box>
+      {result && !isCancelled && (
+        <Box flexDirection="column" marginLeft={3} marginTop={1}>
+          <Box borderStyle="single" borderLeft={true} borderRight={false} borderTop={false} borderBottom={false} paddingLeft={1} borderColor="gray">
+            <Text dimColor={!isError} color={isError ? "red" : undefined} wrap="wrap">
+              {truncateResult(result)}
+            </Text>
           </Box>
         </Box>
       )}
@@ -106,13 +150,14 @@ function renderAssistantContentBlock(
     );
   } else if (block.type === MsgType.TOOL_CALL) {
     return (
-      <Box flexDirection="column" key={`tool-${index}`}>
-        {block.tool_calls?.map((tc) => renderToolCallItem(tc))}
+      <Box flexDirection="column" key={`tool-block-${index}`}>
+        {block.tool_calls?.map((tc, tcIdx) => renderToolCallItem(tc, tcIdx, isStreaming))}
       </Box>
     );
   }
   return null;
 }
+
 
 interface MessageComponentProps {
   message: Message;

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Box, Text, useApp, useStdin, Static } from "ink";
+import os from "os";
+import path from "path";
 import SelectInput from "ink-select-input";
 import Spinner from "ink-spinner";
 import Gradient from "ink-gradient";
@@ -9,6 +11,8 @@ import type { Key } from "./input/key-parser.js";
 import { createShellAgent } from "../core/index.js";
 import { killAllProcesses } from "../core/ai/tools.js";
 import { getCommandManager } from "../core/session/command-manager.js";
+import { questionManager, type QuestionRequest } from "../core/question.js";
+import { AskUserDialog } from "./AskUserDialog.js";
 import { t } from "../i18n.js";
 import { MessageComponent } from "./MessageComponent.js";
 import type {
@@ -25,7 +29,7 @@ import { Command } from "@langchain/langgraph";
 import type { ReactAgent } from "langchain";
 import { BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 
-function Separator() {
+function Separator({ width }: { width?: number }) {
   return (
     <Box
       borderStyle="single"
@@ -34,42 +38,97 @@ function Separator() {
       borderLeft={false}
       borderRight={false}
       height={1}
+      width={width}
     />
   );
 }
 
 export function AppContainer({ config }: AppContainerProps) {
-  // --- 状态与引用 (State & Refs) ---
-  // 包含 UI 状态、消息历史、输入值以及用于同步操作的 Refs
-  const [isLoading, setIsLoading] = useState(true); // 是否正在初始化 Agent 和 Kubernetes 客户端
-  const [messages, setMessages] = useState<Message[]>([]); // 聊天消息历史，包含用户输入、AI 响应和工具调用结果
-  const [inputValue, setInputValue] = useState(""); // 当前输入框的文本内容（用于渲染）
-  const [cursorPosition, setCursorPosition] = useState(0); // 当前光标在输入框中的位置
-  const [isProcessing, setIsProcessing] = useState(false); // 是否正在处理 AI 流，用于锁定输入和显示加载状态
-  const [agent, setAgent] = useState<ReactAgent | null>(null); // LangChain Agent 实例
-  const [mode, setMode] = useState<"agent" | "shell">("agent"); // 当前模式：agent(AI 对话) 或 shell(直接执行命令)
+  // --- 布局常量 ---
+  const terminalWidth = process.stdout.columns || 80;
+  const mainWidth = terminalWidth - 4; // 主容器宽度，对齐带边框的输入框
+  const innerWidth = terminalWidth - 6; // 内部卡片宽度
+  const [isLoading, setIsLoading] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [agent, setAgent] = useState<ReactAgent | null>(null);
+  const [mode, setMode] = useState<"agent" | "shell">("agent");
+  const [activeQuestionRequest, setActiveQuestionRequest] = useState<QuestionRequest | null>(null);
+  const [currentDir] = useState(process.cwd());
+  const [modelName, setModelName] = useState(process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo");
 
-  const [autoExecute, setAutoExecute] = useState(true); // 自主执行模式开关，开启后将跳过 HITL 审批
-  const [runningCommands, setRunningCommands] = useState(0); // 正在运行的后台任务数量
-  const queryExecutedRef = useRef(false); // 确保在初始启动时的 query 指令只执行一次
-  const activeStreamsRef = useRef(0); // 追踪当前活跃的流数量，防止并发冲突
-  const isResumeRef = useRef(false); // 标记当前流是否为 HITL 审批后的恢复执行
-  const currentAiMsgIndexRef = useRef<number>(-1); // 当前正在执行流式更新的 AI 消息在数组中的索引
-  const messagesRef = useRef(messages); // 消息数组的引用，用于在非 React 闭包（如 stdin 事件）中获取最新状态
-  const isProcessingRef = useRef(isProcessing); // 处理状态的引用，用于输入拦截逻辑
-  const seenMessageIdsRef = useRef(new Set<string>()); // 已渲染的消息 ID 集合，用于多轮对话的消息去重
-  const abortControllerRef = useRef<AbortController | null>(null); // 当前对话的取消控制器
-  const lastEscapeTimeRef = useRef(0); // 上次 ESC 键按下的时间，用于防抖
-  const cancelMessageAddedRef = useRef(false); // 防止重复添加取消消息
-  const currentCommandRef = useRef<string>(""); // 当前正在执行的命令
-  const currentStreamRef = useRef<AsyncGenerator<Record<string, any>> | null>(
-    null,
-  ); // 当前正在执行的 stream
+  const isPastingRef = useRef(false); // 是否处于粘贴过程中
+  const lastPasteEndRef = useRef(0); // 上次粘贴结束的时间戳
+  const pasteBufferRef = useRef(""); // 粘贴内容缓冲区
+  const currentAiMsgIndexRef = useRef<number>(-1); // 当前正在执行流式更新的 AI 消息索引
+
+  // 引用快照，用于在事件处理闭包中获取最新状态
+  const messagesRef = useRef(messages);
+  const isProcessingRef = useRef(isProcessing);
+  const inputValueRef = useRef(inputValue);
+  const cursorRef = useRef(cursorPosition);
+  const modeRef = useRef(mode);
+
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
+  useEffect(() => { inputValueRef.current = inputValue; }, [inputValue]);
+  useEffect(() => { cursorRef.current = cursorPosition; }, [cursorPosition]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  // 开启 Bracketed Paste Mode
+  useEffect(() => {
+    process.stdout.write("\u001b[?2004h");
+    return () => {
+      process.stdout.write("\u001b[?2004l");
+    };
+  }, []);
+
+  const tildeifyPath = (fullPath: string) => {
+    const home = os.homedir();
+    if (fullPath === home) return "~";
+    if (fullPath.startsWith(home)) {
+      return `~${path.sep}${path.relative(home, fullPath)}`;
+    }
+    return fullPath;
+  };
+
+  const shortenPath = (p: string, maxLen: number = 40) => {
+    if (p.length <= maxLen) return p;
+    const segments = p.split(path.sep).filter(Boolean);
+    if (segments.length <= 2) return p;
+
+    const first = segments[0];
+    const last = segments[segments.length - 1];
+    const isTilde = p.startsWith("~");
+    
+    const start = isTilde ? "~" : `${path.sep}${first}`;
+    const result = `${start}${path.sep}...${path.sep}${last}`;
+    
+    return result.length > maxLen ? last : result;
+  };
+
+  const [autoExecute, setAutoExecute] = useState(true);
+  const [runningCommands, setRunningCommands] = useState(0);
+  const queryExecutedRef = useRef(false);
+  const activeStreamsRef = useRef(0);
+  const seenMessageIdsRef = useRef(new Set<string>());
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastEscapeTimeRef = useRef(0);
+  const cancelMessageAddedRef = useRef(false);
+  const currentCommandRef = useRef<string>("");
+  const currentStreamRef = useRef<AsyncGenerator<Record<string, any>> | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const suggestionsRef = useRef<string[]>([]);
   const selectedIndexRef = useRef(0);
-  const cleanupKeyListenerRef = useRef<(() => void) | null>(null); // 存储 key listener 的 cleanup 函数
+  const cleanupKeyListenerRef = useRef<(() => void) | null>(null);
+
+  const commandHistoryRef = useRef<string[]>([]);
+  const shellHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const draftInputRef = useRef<string>("");
 
   const ALL_COMMANDS = ["help", "version", "exit", "command"];
 
@@ -88,15 +147,6 @@ export function AppContainer({ config }: AppContainerProps) {
   }, [inputValue]);
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    isProcessingRef.current = isProcessing;
-  }, [isProcessing]);
-
-  // Update running commands count periodically
-  useEffect(() => {
     const updateRunningCommands = () => {
       try {
         const commandManager = getCommandManager();
@@ -107,29 +157,24 @@ export function AppContainer({ config }: AppContainerProps) {
         setRunningCommands(0);
       }
     };
-
-    // Initial update
     updateRunningCommands();
-
-    // Update every 2 seconds
     const interval = setInterval(updateRunningCommands, 2000);
-
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleQuestionRequested = (request: QuestionRequest) => {
+      setActiveQuestionRequest(request);
+    };
+    questionManager.on("question_requested", handleQuestionRequested);
+    return () => {
+      questionManager.off("question_requested", handleQuestionRequested);
+    };
   }, []);
 
   const { exit } = useApp();
   const { stdin, setRawMode } = useStdin();
 
-  const inputValueRef = useRef(inputValue);
-  const cursorRef = useRef(cursorPosition);
-
-  const commandHistoryRef = useRef<string[]>([]); // agent 模式命令历史
-  const shellHistoryRef = useRef<string[]>([]); // shell 模式命令历史
-  const historyIndexRef = useRef<number>(-1);
-  const draftInputRef = useRef<string>("");
-
-  // --- 辅助函数 ---
-  // 检查消息是否包含待处理的中断 (HITL 流程)
   const messageHasInterrupt = (m: Message) => {
     return (
       m.role === Role.ASSISTANT &&
@@ -142,8 +187,6 @@ export function AppContainer({ config }: AppContainerProps) {
     );
   };
 
-  // --- Agent 初始化 ---
-  // 根据环境变量创建 AI Agent 实例
   useEffect(() => {
     const initializeAgent = async () => {
       try {
@@ -152,29 +195,15 @@ export function AppContainer({ config }: AppContainerProps) {
         const model = process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo";
 
         if (!apiKey || !baseURL) {
-          setMessages([
-            {
-              role: Role.SYSTEM,
-              content: t("app.welcome"),
-              timestamp: new Date(),
-            },
-            {
-              role: Role.SYSTEM,
-              content: t("app.aiNotConfigured"),
-              timestamp: new Date(),
-            },
-          ]);
+          setMessages([{ role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() }, { role: Role.SYSTEM, content: t("app.aiNotConfigured"), timestamp: new Date() }]);
           setIsLoading(false);
           return;
         }
 
-        const agentConfig = {
-          apiKey,
-          baseURL,
-          model,
-        };
+        const agentConfig = { apiKey, baseURL, model };
         const shellAgent = await createShellAgent(agentConfig);
         setAgent(shellAgent);
+        setModelName(model);
       } catch (error) {
         handleError(error);
       } finally {
@@ -184,69 +213,40 @@ export function AppContainer({ config }: AppContainerProps) {
     initializeAgent();
   }, []);
 
-  // --- 指令与流处理入口 ---
-  // 处理用户提交的指令并启动 AI 流响应
-
-  // 取消当前任务：停止正在运行的命令并重置状态
   const cancelCurrentTask = async () => {
     if (cancelMessageAddedRef.current) return;
     cancelMessageAddedRef.current = true;
-
-    // 触发 AbortController 取消
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    // 清除 key listener 中 pending 的 timeout，防止重复触发 ESC 事件
-    if (cleanupKeyListenerRef.current) {
-      cleanupKeyListenerRef.current();
-    }
-    // 停止当前 stream
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    if (cleanupKeyListenerRef.current) cleanupKeyListenerRef.current();
     if (currentStreamRef.current) {
       currentStreamRef.current.return?.(undefined);
       currentStreamRef.current = null;
     }
     killAllProcesses();
     activeStreamsRef.current = 0;
-    // 更新 ref 和 state
     isProcessingRef.current = false;
     setIsProcessing(false);
 
-    // 检查是否有待处理的 interrupt，如果有则发送 reject 决策
     const pendingMsg = messagesRef.current.find(messageHasInterrupt);
     if (pendingMsg && agent) {
-      const block = (pendingMsg.content as AssistantMessage[]).find(
-        (b) =>
-          b.type === MsgType.TOOL_CALL &&
-          b.tool_calls?.some((tc) => tc.interrupt),
-      );
-      const tc = block?.tool_calls?.find((t) => t.interrupt);
+      const block = (pendingMsg.content as AssistantMessage[]).find(b => b.type === MsgType.TOOL_CALL && b.tool_calls?.some(tc => tc.interrupt));
+      const tc = block?.tool_calls?.find(t => t.interrupt);
       if (tc && tc.interrupt) {
-        // 通过 LangGraph 的 HITL 机制发送 reject 决策
         await handleDecision("reject", tc.id || "", tc.interrupt);
-        return; // 等待 handleDecision 完成后再添加取消消息
+        return;
       }
     }
 
-    // 立即将当前 AI 消息的 streaming 设为 false，并为未完成的 tool_call 添加取消响应
     setMessages((prev) => {
       const next = [...prev];
-      const aiIdx = next.findIndex(
-        (m) => m.role === Role.ASSISTANT && m.streaming,
-      );
+      const aiIdx = next.findIndex(m => m.role === Role.ASSISTANT && m.streaming);
       if (aiIdx !== -1) {
         next[aiIdx].streaming = false;
-
-        // 为未完成的 tool_call 添加取消响应，避免 LangGraph 状态不一致
         const aiMsg = next[aiIdx];
         if (Array.isArray(aiMsg.content)) {
           for (const block of aiMsg.content) {
             if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-              for (const tc of block.tool_calls) {
-                if (!tc.result) {
-                  tc.result = "Command cancelled by user";
-                }
-              }
+              for (const tc of block.tool_calls) { if (!tc.result) tc.result = "Command cancelled by user"; }
             }
           }
         }
@@ -255,976 +255,486 @@ export function AppContainer({ config }: AppContainerProps) {
     });
 
     const command = currentCommandRef.current?.trim() || "当前操作";
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: Role.ASSISTANT,
-        content: `任务已取消：${command}（用户按下 ESC 键中断）`,
-        timestamp: new Date(),
-        error: true,
-      },
-    ]);
+    setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `任务已取消：${command}（用户按下 ESC 键中断）`, timestamp: new Date(), error: true }]);
   };
 
-  const handleCommand = async (
-    command: string,
-    isFromQuery: boolean = false,
-  ) => {
+  const handleCommand = async (command: string, isFromQuery: boolean = false) => {
     const trimmed = command.trim();
     if (!isFromQuery) {
       commandHistoryRef.current.push(trimmed);
       historyIndexRef.current = -1;
-      setMessages((prev) => [
-        ...prev,
-        { role: Role.USER, content: trimmed, timestamp: new Date() },
-      ]);
+      setMessages((prev) => [...prev, { role: Role.USER, content: trimmed, timestamp: new Date() }]);
     }
 
-    // 处理本地专用斜杠命令
     if (trimmed.startsWith("/")) {
       const cmd = trimmed.slice(1).toLowerCase().split(" ")[0];
-      if (cmd === "clear") {
-        setMessages([]);
-        seenMessageIdsRef.current.clear();
-        return;
-      }
-      if (cmd === "exit") {
-        exit();
-        setTimeout(() => process.exit(0), 100);
-        return;
-      }
-      if (cmd === "version") {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: Role.ASSISTANT,
-            content: `OpenShell ${config.version}`,
-            timestamp: new Date(),
-          },
-        ]);
-        return;
-      }
+      if (cmd === "clear") { setMessages([]); seenMessageIdsRef.current.clear(); return; }
+      if (cmd === "exit") { exit(); setTimeout(() => process.exit(0), 100); return; }
+      if (cmd === "version") { setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `OpenShell ${config.version}`, timestamp: new Date() }]); return; }
       if (cmd === "help") {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: Role.ASSISTANT,
-            content: `${t("help.availableCommands")}
-  /help    - ${t("help.helpCommand")}
-  /version - ${t("help.versionCommand")}
-  /clear   - ${t("help.clearCommand")}
-  /command - ${t("help.commandCommand")}
-  /exit    - ${t("help.exitCommand")}
-  
-${t("help.withAiAgent")}`,
-            timestamp: new Date(),
-          },
-        ]);
+        setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `${t("help.availableCommands")}\n  /help    - ${t("help.helpCommand")}\n  /version - ${t("help.versionCommand")}\n  /clear   - ${t("help.clearCommand")}\n  /command - ${t("help.commandCommand")}\n  /exit    - ${t("help.exitCommand")}\n\n${t("help.withAiAgent")}`, timestamp: new Date() }]);
         return;
       }
-
       if (cmd === "command") {
         const commandManager = getCommandManager();
         const commands = commandManager.listCommands();
-
         if (commands.length === 0) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: Role.ASSISTANT,
-              content: "No background commands found.",
-              timestamp: new Date(),
-            },
-          ]);
+          setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: "No background commands found.", timestamp: new Date() }]);
         } else {
-          const summary = commands
-            .map(
-              (c) =>
-                `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`,
-            )
-            .join("\n");
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: Role.ASSISTANT,
-              content: `Background Commands (${commands.length}):\n${summary}\n\n${t("command.backgroundWarning")}`,
-              timestamp: new Date(),
-            },
-          ]);
+          const summary = commands.map(c => `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`).join("\n");
+          setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `Background Commands (${commands.length}):\n${summary}\n\n${t("command.backgroundWarning")}`, timestamp: new Date() }]);
         }
         return;
       }
     }
 
     if (agent) {
-      // Check for pending interrupts (HITL)
-      const currentMessages = messagesRef.current;
-      const pendingMsg = currentMessages.find(messageHasInterrupt);
-
-      // If there's a pending interrupt and the input is empty or "继续/continue/ok"
-      // we resume the graph with approval.
+      const pendingMsg = messagesRef.current.find(messageHasInterrupt);
       const resumeKeywords = ["继续", "continue", "ok", "yes", "y", ""];
       if (pendingMsg && resumeKeywords.includes(trimmed.toLowerCase())) {
-        const block = (pendingMsg.content as AssistantMessage[]).find(
-          (b) =>
-            b.type === MsgType.TOOL_CALL &&
-            b.tool_calls?.some((tc) => tc.interrupt),
-        );
-        const tc = block?.tool_calls?.find((t) => t.interrupt);
-        if (tc && tc.interrupt) {
-          await handleDecision("approve", tc.id || "", tc.interrupt);
-          return;
-        }
+        const block = (pendingMsg.content as AssistantMessage[]).find(b => b.type === MsgType.TOOL_CALL && b.tool_calls?.some(tc => tc.interrupt));
+        const tc = block?.tool_calls?.find(t => t.interrupt);
+        if (tc && tc.interrupt) { await handleDecision("approve", tc.id || "", tc.interrupt); return; }
       }
-
       await handleAiStream(trimmed);
     } else {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: Role.ASSISTANT,
-          content: "Agent not ready.",
-          timestamp: new Date(),
-        },
-      ]);
+      setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: "Agent not ready.", timestamp: new Date() }]);
       setIsProcessing(false);
     }
   };
 
   const handleAiStream = async (cmd: string) => {
-    // 取消之前的对话
     abortControllerRef.current?.abort();
-    // 创建新的 AbortController
     abortControllerRef.current = new AbortController();
-
     cancelMessageAddedRef.current = false;
     currentCommandRef.current = cmd;
-
     activeStreamsRef.current++;
     setIsProcessing(true);
     try {
       setMessages((prev) => {
-        const next = [
-          ...prev,
-          {
-            role: Role.ASSISTANT,
-            content: [],
-            timestamp: new Date(),
-            streaming: true,
-          },
-        ];
+        const next = [...prev, { role: Role.ASSISTANT, content: [], timestamp: new Date(), streaming: true }];
         currentAiMsgIndexRef.current = next.length - 1;
         return next;
       });
       if (!agent) return;
-      const stream = await agent.stream(
-        { messages: [{ role: Role.USER, content: cmd }] },
-        { streamMode: "updates", configurable: { thread_id: "main-session" } },
-      );
+      const stream = await agent.stream({ messages: [{ role: Role.USER, content: cmd }] }, { streamMode: "updates", configurable: { thread_id: "main-session" } });
       currentStreamRef.current = stream;
       await processAiStream(stream, abortControllerRef.current);
       currentStreamRef.current = null;
     } catch (error) {
-      // 如果是取消操作，不显示错误
-      if (!abortControllerRef.current?.signal.aborted) {
-        handleError(error);
-      }
+      if (!abortControllerRef.current?.signal.aborted) handleError(error);
     } finally {
       activeStreamsRef.current--;
-      // 只有在没有取消时才更新 isProcessing
-      if (
-        !abortControllerRef.current?.signal.aborted &&
-        activeStreamsRef.current <= 0
-      ) {
-        setIsProcessing(false);
-      }
+      if (!abortControllerRef.current?.signal.aborted && activeStreamsRef.current <= 0) setIsProcessing(false);
     }
   };
 
-  // --- AI 流状态处理核心逻辑 ---
-  // 负责解析 LangGraph 的 'updates' 流，并处理消息去重、工具调用渲染以及中断检测
-  const processAiStream = async (
-    stream: AsyncIterable<Record<string, any>>,
-    abortController: AbortController,
-  ) => {
+  const processAiStream = async (stream: AsyncIterable<Record<string, any>>, abortController: AbortController) => {
     let lastToolCallId: string | null = null;
     let hasInterrupt = false;
     const aiMsgIndex = currentAiMsgIndexRef.current;
-
     try {
       for await (const chunk of stream) {
-        // 检查取消标志，如果已取消则退出循环
-        if (abortController.signal.aborted) {
-          return; // 直接返回，不再执行后续设置 streaming=false 的逻辑
-        }
-
+        if (abortController.signal.aborted) return;
         if (!chunk || typeof chunk !== "object") continue;
-
         const nodeName = Object.keys(chunk)[0];
         const nodeData = chunk[nodeName] as { messages: BaseMessage[] };
-
-        // 消息去重辅助逻辑：
-        // 在 'updates' 模式下，middleware 处理后的消息会以序列化格式回传。
-        // 此时 msg.id 可能是类路径数组 (如 ["langchain_core", "messages", "HumanMessage"])。
-        // 我们必须提取真正的唯一 ID (通常在 kwargs.id 中) 进行字符串匹配。
         if (nodeData && Array.isArray(nodeData.messages)) {
           nodeData.messages = nodeData.messages.filter((msg: any) => {
-            const rawId = msg.id || (msg as any).kwargs?.id;
-            const msgId =
-              typeof rawId === "string" ? rawId : (msg as any).kwargs?.id;
-
-            if (
-              typeof msgId === "string" &&
-              seenMessageIdsRef.current.has(msgId)
-            ) {
-              return false;
-            }
-            if (typeof msgId === "string") {
-              seenMessageIdsRef.current.add(msgId);
-            }
+            const rawId = msg.id || msg.kwargs?.id;
+            const msgId = typeof rawId === "string" ? rawId : msg.kwargs?.id;
+            if (typeof msgId === "string" && seenMessageIdsRef.current.has(msgId)) return false;
+            if (typeof msgId === "string") seenMessageIdsRef.current.add(msgId);
             return true;
           });
         }
-
         const firstMsg = nodeData?.messages?.[0];
-        const interrupt =
-          chunk["__interrupt__"]?.[0] ||
-          (firstMsg instanceof AIMessage
-            ? (
-                firstMsg.additional_kwargs[
-                  "interrupts"
-                ] as unknown as Interrupt[]
-              )?.[0]
-            : null) ||
-          (firstMsg as any)?.interrupt;
-
+        const interrupt = chunk["__interrupt__"]?.[0] || (firstMsg instanceof AIMessage ? (firstMsg.additional_kwargs["interrupts"] as unknown as Interrupt[])?.[0] : null) || (firstMsg as any)?.interrupt;
         if (interrupt && !hasInterrupt) {
           hasInterrupt = true;
-          if (autoExecute) {
-            handleDecision("approve", lastToolCallId || "", interrupt);
-            return;
-          }
-
+          if (autoExecute) { handleDecision("approve", lastToolCallId || "", interrupt); return; }
           setMessages((prev) => {
             const next = [...prev];
             const idx = aiMsgIndex;
             if (idx === -1) return prev;
             const aiMsg = { ...next[idx] };
-            const assistantContent = Array.isArray(aiMsg.content)
-              ? [...aiMsg.content]
-              : [];
-
-            // 更新消息树：找到当前正在运行的工具调用块，并注入中断（Interrupt）信息
-            // 这将触发 UI 显示审批按钮
+            const assistantContent = Array.isArray(aiMsg.content) ? [...aiMsg.content] : [];
             for (const block of assistantContent) {
               if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                const tc = block.tool_calls.find(
-                  (t) =>
-                    !t.result &&
-                    (lastToolCallId ? t.id === lastToolCallId : true),
-                );
-                if (tc) {
-                  tc.interrupt = interrupt;
-                  break;
-                }
+                const tc = block.tool_calls.find(t => !t.result && (lastToolCallId ? t.id === lastToolCallId : true));
+                if (tc) { tc.interrupt = interrupt; break; }
               }
             }
-            aiMsg.content = assistantContent;
-            next[idx] = aiMsg;
-            return next;
+            aiMsg.content = assistantContent; next[idx] = aiMsg; return next;
           });
         }
-
         if (!nodeData || !Array.isArray(nodeData.messages)) continue;
-
         for (const msg of nodeData.messages as any[]) {
-          const content =
-            typeof msg.content === "string"
-              ? msg.content
-              : JSON.stringify(msg.content);
+          const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
           const toolCalls = msg.tool_calls || msg.kwargs?.tool_calls || [];
-
-          // 健壮的角色与类型识别
           let msgType = msg._getType?.() || msg.type || msg.kwargs?.type;
-          if (!msgType && Array.isArray(msg.id)) {
-            const lcClass = msg.id[msg.id.length - 1];
-            if (lcClass === "HumanMessage" || lcClass === "HumanMessageChunk")
-              msgType = "human";
-            else if (lcClass === "AIMessage" || lcClass === "AIMessageChunk")
-              msgType = "ai";
-            else if (lcClass === "ToolMessage") msgType = "tool";
-            else if (lcClass === "SystemMessage") msgType = "system";
-          }
-
-          // 统一角色判定
-          const isTool =
-            msgType === "tool" ||
-            msg instanceof ToolMessage ||
-            msg.id === "ToolMessage";
-          const isAI =
-            msgType === "ai" ||
-            msg instanceof AIMessage ||
-            msgType === "assistant";
+          const isTool = msgType === "tool" || msg instanceof ToolMessage || msg.id === "ToolMessage";
+          const isAI = msgType === "ai" || msg instanceof AIMessage || msgType === "assistant";
           const role = isTool ? "tool" : isAI ? "assistant" : msgType;
-
-          // 严格过滤：仅处理当前 Turn 产生的 AI 响应或工具执行结果
-          // 'human' 和 'system' 消息来自历史状态回传，应予跳过
           if (role === "human" || role === "system") continue;
-
           setMessages((prev) => {
             const next = [...prev];
             const idx = aiMsgIndex;
             if (idx === -1) return prev;
             const aiMsg = { ...next[idx] };
-            const assistantContent = Array.isArray(aiMsg.content)
-              ? [...aiMsg.content]
-              : [];
-
+            const assistantContent = Array.isArray(aiMsg.content) ? [...aiMsg.content] : [];
             if (role === "assistant") {
               if (content) {
-                // 在 updates 模式下，系统返回的是该节点生成的完整文本。
-                // 为了支持流式视觉效果，我们检查最后一个文本块：
-                // 如果内容发生变化则同步替换，否则追加新块。
-                const lastTextBlock =
-                  assistantContent[assistantContent.length - 1];
-                if (
-                  lastTextBlock &&
-                  lastTextBlock.type === MsgType.TEXT &&
-                  lastTextBlock.content !== content
-                ) {
+                const lastTextBlock = assistantContent[assistantContent.length - 1];
+                if (lastTextBlock && lastTextBlock.type === MsgType.TEXT && lastTextBlock.content !== content) {
                   lastTextBlock.content = content;
-                } else if (
-                  !lastTextBlock ||
-                  lastTextBlock.type !== MsgType.TEXT
-                ) {
+                } else if (!lastTextBlock || lastTextBlock.type !== MsgType.TEXT) {
                   assistantContent.push({ type: MsgType.TEXT, content });
                 }
               }
               if (toolCalls && Array.isArray(toolCalls)) {
                 lastToolCallId = toolCalls[0]?.id || null;
-
-                // Check if this tool call block already exists in assistantContent to avoid duplicates
-                const exists = assistantContent.some(
-                  (block) =>
-                    block.type === MsgType.TOOL_CALL &&
-                    block.tool_calls?.some((tc) => tc.id === lastToolCallId),
-                );
-
+                const exists = assistantContent.some(block => block.type === MsgType.TOOL_CALL && block.tool_calls?.some(tc => tc.id === lastToolCallId));
                 if (!exists) {
-                  assistantContent.push({
-                    type: MsgType.TOOL_CALL,
-                    tool_calls: toolCalls.map((tc) => ({
-                      id: tc.id || "",
-                      name: tc.name,
-                      args: tc.args,
-                    })),
-                  });
+                  assistantContent.push({ type: MsgType.TOOL_CALL, tool_calls: toolCalls.map(tc => ({ id: tc.id || "", name: tc.name, args: tc.args })) });
                 }
               }
             } else if (role === "tool") {
-              // 处理工具执行结果：将结果挂载到对应的工具调用块上，由 MessageComponent 负责渲染输出
-              const toolId =
-                msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
+              const toolId = msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
               for (const block of assistantContent) {
                 if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                  const tc = block.tool_calls.find((t) => t.id === toolId);
+                  const tc = block.tool_calls.find(t => t.id === toolId);
                   if (tc) tc.result = content;
                 }
               }
             }
-            aiMsg.content = assistantContent;
-            next[idx] = aiMsg;
-            return next;
+            aiMsg.content = assistantContent; next[idx] = aiMsg; return next;
           });
         }
       }
-    } catch (streamError) {
-      if (!abortController.signal.aborted) {
-        throw streamError;
-      }
-    }
+    } catch (e) { if (!abortController.signal.aborted) throw e; }
     setMessages((prev) => {
       const next = [...prev];
       const idx = aiMsgIndex;
       if (idx !== -1) next[idx].streaming = false;
       return next;
     });
-
-    // 流处理结束后，获取当前线程的完整状态，确保所有消息 ID 都被记录到已读集合中。
-    // 这是对循环内即时记录的补充，防止因 nodeData 结构差异导致的遗漏。
     try {
       if (agent) {
-        const history = await agent.graph.getState({
-          configurable: { thread_id: "main-session" },
-        });
-        if (history?.values?.messages) {
-          (history.values.messages as BaseMessage[]).forEach((msg) => {
-            const msgId = msg.id;
-            if (msgId) seenMessageIdsRef.current.add(msgId);
-          });
-        }
+        const history = await agent.graph.getState({ configurable: { thread_id: "main-session" } });
+        if (history?.values?.messages) { (history.values.messages as BaseMessage[]).forEach(msg => { if (msg.id) seenMessageIdsRef.current.add(msg.id); }); }
       }
-    } catch (e) {
-      // 状态获取失败的降级处理
-    }
+    } catch (e) {}
   };
 
-  // --- 人机交互 (HITL) 决策处理 ---
-  // 处理用户对工具调用的“批准”或“拒绝”操作，并恢复流执行
-  const handleDecision = async (
-    decision: "approve" | "reject",
-    toolId: string,
-    interrupt?: Interrupt,
-  ) => {
+  const handleDecision = async (decision: "approve" | "reject", toolId: string, interrupt?: Interrupt) => {
     if (!agent || !interrupt) return;
     activeStreamsRef.current++;
     setIsProcessing(true);
-    isResumeRef.current = true;
     try {
       setMessages((prev) => {
         const next = [...prev];
-        const aiIdx = [...next]
-          .reverse()
-          .findIndex((m) => m.role === Role.ASSISTANT);
+        const aiIdx = [...next].reverse().findIndex(m => m.role === Role.ASSISTANT);
         if (aiIdx !== -1) {
           const idx = next.length - 1 - aiIdx;
           next[idx] = { ...next[idx], streaming: true };
           currentAiMsgIndexRef.current = idx;
         }
-
         for (const msg of next) {
           if (msg.role === Role.ASSISTANT && Array.isArray(msg.content)) {
             for (const block of msg.content) {
               if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                if (interrupt) {
-                  block.tool_calls.forEach((tc) => {
-                    if (tc.interrupt) delete tc.interrupt;
-                  });
-                } else {
-                  const tc = block.tool_calls.find((t) => t.id === toolId);
-                  if (tc) delete tc.interrupt;
-                }
+                block.tool_calls.forEach(tc => { if (tc.interrupt) delete tc.interrupt; });
               }
             }
           }
         }
         return next;
       });
-
-      let decisions: { type: string }[] = [{ type: decision }];
-      if (interrupt?.value?.action_requests) {
-        decisions = interrupt.value.action_requests.map(() => ({
-          type: decision,
-        }));
-      }
-
-      const stream = await agent.stream(
-        new Command({ resume: { [interrupt.id]: { decisions } } }) as any,
-        { streamMode: "updates", configurable: { thread_id: "main-session" } },
-      );
+      let decisions = [{ type: decision }];
+      if (interrupt?.value?.action_requests) decisions = interrupt.value.action_requests.map(() => ({ type: decision }));
+      const stream = await agent.stream(new Command({ resume: { [interrupt.id]: { decisions } } }) as any, { streamMode: "updates", configurable: { thread_id: "main-session" } });
       await processAiStream(stream, abortControllerRef.current!);
-    } catch (error) {
-      handleError(error);
-    } finally {
-      isResumeRef.current = false;
-      activeStreamsRef.current--;
-      if (activeStreamsRef.current <= 0) setIsProcessing(false);
-    }
+    } catch (error) { handleError(error); } finally { activeStreamsRef.current--; if (activeStreamsRef.current <= 0) setIsProcessing(false); }
   };
 
   const handleError = (error: unknown) => {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: Role.ASSISTANT,
-        content: `System Error: ${errorMsg}`,
-        timestamp: new Date(),
-        error: true,
-      },
-    ]);
+    setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `System Error: ${errorMsg}`, timestamp: new Date(), error: true }]);
   };
 
   useEffect(() => {
-    if (
-      config.query &&
-      !config.interactive &&
-      agent &&
-      !queryExecutedRef.current
-    ) {
+    if (config.query && !config.interactive && agent && !queryExecutedRef.current) {
       queryExecutedRef.current = true;
       handleCommand(config.query, true);
     }
   }, [config.query, config.interactive, agent]);
 
-  // --- 键盘输入处理 (低级事件监听) ---
-  // 使用手动监听 stdin 的方式绕过 Ink 默认 input hook 在某些系统下的不稳定性
-  // 支持：光标移动、退格删除、历史记录导航、Ctrl+C 退出、Ctrl+A 切换自主模式
   useEffect(() => {
     setRawMode(true);
-
     const handleKey = (key: Key) => {
-      // ESC: 如果正在处理中，取消当前任务；否则不做任何操作
-      if (key.name === "escape") {
-        // 防抖：100ms 内只处理一次 ESC 事件
-        const now = Date.now();
-        if (now - lastEscapeTimeRef.current < 100) {
-          return;
+      // 1. 优先处理最关键的控制键：Ctrl+C
+      if (key.ctrl && key.name === "c") {
+        if (inputValueRef.current.length > 0 || inputValue.length > 0) {
+          inputValueRef.current = "";
+          cursorRef.current = 0;
+          setInputValue("");
+          setCursorPosition(0);
+        } else {
+          exit();
+          setTimeout(() => process.exit(0), 100);
         }
+        return;
+      }
+
+      // 2. 处理 ESC 键：取消当前处理中的任务或 HITL 中断
+      if (key.name === "escape") {
+        const now = Date.now();
+        if (now - lastEscapeTimeRef.current < 100) return;
         lastEscapeTimeRef.current = now;
 
-        // 检查是否正在处理中或有待处理的中断
-        const isCurrentlyProcessing = isProcessingRef.current;
-        const hasInterrupt = messagesRef.current.some(messageHasInterrupt);
-
-        if (isCurrentlyProcessing || hasInterrupt) {
+        if (isProcessingRef.current || messagesRef.current.some(messageHasInterrupt)) {
           void cancelCurrentTask();
         }
         return;
       }
 
-      // Ctrl+C: 直接退出程序
-      if (key.ctrl && key.name === "c") {
-        exit();
-        setTimeout(() => process.exit(0), 100);
-        return;
-      }
-
-      // 特殊功能快捷键 (Ctrl+A)
-      if (key.ctrl && key.name === "a") {
-        setAutoExecute((prev) => !prev);
-        return;
-      }
-
-      const currentMessages = messagesRef.current;
+      // 获取当前最新状态快照
       const currentInputValue = inputValueRef.current;
       const currentCursorPosition = cursorRef.current;
-      const currentMode = mode; // 捕获 mode 快照用于闭包
+      const currentMode = modeRef.current;
 
-      // 检查是否有挂起的中断 (HITL 模式)
-      const hasInterrupt = currentMessages.some(messageHasInterrupt);
-
-      // Shell 模式触发：在输入框起始位置输入 !
-      if (key.name === "!" && currentCursorPosition === 0 && mode === "agent") {
-        setMode("shell");
+      // 2. 处理粘贴开始和结束
+      if (key.name === "paste-start") {
+        isPastingRef.current = true;
+        pasteBufferRef.current = "";
         return;
       }
-
-      // Shell 模式退出：Esc 或起始位置 Backspace
-      if (mode === "shell") {
-        if (
-          key.name === "escape" ||
-          (key.name === "backspace" && currentCursorPosition === 0)
-        ) {
-          setMode("agent");
-          return;
-        }
-
-        // Shell 模式回车执行
-        if (key.name === "return" || key.name === "enter") {
-          if (currentInputValue.trim()) {
-            const command = currentInputValue.trim();
-            shellHistoryRef.current.push(command);
-            historyIndexRef.current = -1;
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: Role.USER,
-                content: `! ${command}`,
-                timestamp: new Date(),
-              },
-            ]);
-
-            void (async () => {
-              try {
-                setIsProcessing(true);
-                isProcessingRef.current = true;
-
-                const commandManager = getCommandManager();
-                const { command_id, pid } = await commandManager.startCommand(
-                  command,
-                  "Shell mode command",
-                );
-
-                const checkStatus = async (): Promise<string> => {
-                  return new Promise((resolve) => {
-                    const check = () => {
-                      const cmd = commandManager.getCommand(command_id);
-                      if (!cmd) {
-                        resolve("Command not found");
-                        return;
-                      }
-                      if (cmd.status === "running") {
-                        setTimeout(check, 100);
-                        return;
-                      }
-                      const output =
-                        commandManager.getCommandOutput(command_id);
-                      resolve(output || `(exit code: ${cmd.exitCode})`);
-                    };
-                    check();
-                  });
-                };
-
-                const output = await checkStatus();
-
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: Role.ASSISTANT,
-                    content: `Command executed (PID: ${pid}):\n${output || "(no output)"}`,
-                    timestamp: new Date(),
-                  },
-                ]);
-              } catch (error) {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: Role.ASSISTANT,
-                    content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
-                    timestamp: new Date(),
-                    error: true,
-                  },
-                ]);
-              } finally {
-                setIsProcessing(false);
-                isProcessingRef.current = false;
-                setMode("agent");
-              }
-            })();
-
-            inputValueRef.current = "";
-            cursorRef.current = 0;
-            setInputValue("");
-            setCursorPosition(0);
-          }
-          return;
-        }
-        // Shell 模式下允许继续编辑输入，不要 return，继续执行下面的打字逻辑
-      }
-
-      // 状态锁机制：
-      // 如果存在待处理的 HITL 中断或 AI 正在处理流，禁止普通文本输入，防止状态竞争
-      if (hasInterrupt || isProcessing) return;
-
-      // Handle Return
-      if (key.name === "return" || key.name === "enter") {
-        if (suggestionsRef.current.length > 0) {
-          const picked = suggestionsRef.current[selectedIndexRef.current];
-          const fullCommand = "/" + picked;
-          handleCommand(fullCommand);
-          inputValueRef.current = "";
-          cursorRef.current = 0;
-          setInputValue("");
-          setCursorPosition(0);
-          setSuggestions([]);
-          suggestionsRef.current = [];
-          return;
-        }
-        if (currentInputValue.trim()) {
-          handleCommand(currentInputValue.trim());
-          inputValueRef.current = "";
-          cursorRef.current = 0;
-          setInputValue("");
-          setCursorPosition(0);
-        }
-        return;
-      }
-
-      // Handle Arrows
-      if (key.name === "left") {
-        const nextPos = Math.max(0, currentCursorPosition - 1);
-        cursorRef.current = nextPos;
-        setCursorPosition(nextPos);
-        return;
-      }
-      if (key.name === "right") {
-        const nextPos = Math.min(
-          currentInputValue.length,
-          currentCursorPosition + 1,
-        );
-        cursorRef.current = nextPos;
-        setCursorPosition(nextPos);
-        return;
-      }
-      if (key.name === "up") {
-        if (suggestionsRef.current.length > 0) {
-          const nextIndex =
-            (selectedIndexRef.current - 1 + suggestionsRef.current.length) %
-            suggestionsRef.current.length;
-          selectedIndexRef.current = nextIndex;
-          setSelectedIndex(nextIndex);
-          return;
-        }
-        // 根据模式选择历史记录
-        const history =
-          currentMode === "shell"
-            ? shellHistoryRef.current
-            : commandHistoryRef.current;
-        if (history.length === 0) return;
-
-        if (historyIndexRef.current === -1) {
-          draftInputRef.current = currentInputValue;
-          historyIndexRef.current = history.length - 1;
-        } else if (historyIndexRef.current > 0) {
-          historyIndexRef.current -= 1;
-        } else {
-          return;
-        }
-
-        const historicalCommand = history[historyIndexRef.current];
-        inputValueRef.current = historicalCommand;
-        cursorRef.current = historicalCommand.length;
-        setInputValue(historicalCommand);
-        setCursorPosition(historicalCommand.length);
-        return;
-      }
-      if (key.name === "down") {
-        if (suggestionsRef.current.length > 0) {
-          const nextIndex =
-            (selectedIndexRef.current + 1) % suggestionsRef.current.length;
-          selectedIndexRef.current = nextIndex;
-          setSelectedIndex(nextIndex);
-          return;
-        }
-        // 根据模式选择历史记录
-        const history =
-          currentMode === "shell"
-            ? shellHistoryRef.current
-            : commandHistoryRef.current;
-        if (historyIndexRef.current === -1) return;
-
-        if (historyIndexRef.current < history.length - 1) {
-          historyIndexRef.current += 1;
-          const historicalCommand = history[historyIndexRef.current];
-          inputValueRef.current = historicalCommand;
-          cursorRef.current = historicalCommand.length;
-          setInputValue(historicalCommand);
-          setCursorPosition(historicalCommand.length);
-        } else {
-          historyIndexRef.current = -1;
-          const draft = draftInputRef.current;
-          inputValueRef.current = draft;
-          cursorRef.current = draft.length;
-          setInputValue(draft);
-          setCursorPosition(draft.length);
-          draftInputRef.current = "";
-        }
-        return;
-      }
-      if (key.name === "home") {
-        cursorRef.current = 0;
-        setCursorPosition(0);
-        return;
-      }
-      if (key.name === "end") {
-        const nextPos = currentInputValue.length;
-        cursorRef.current = nextPos;
-        setCursorPosition(nextPos);
-        return;
-      }
-
-      // Handle Backspace (Left Delete)
-      if (key.name === "backspace") {
-        if (currentCursorPosition > 0) {
-          const newValue =
-            currentInputValue.slice(0, currentCursorPosition - 1) +
-            currentInputValue.slice(currentCursorPosition);
-          const nextPos = currentCursorPosition - 1;
+      if (key.name === "paste-end") {
+        isPastingRef.current = false;
+        lastPasteEndRef.current = Date.now();
+        const pastedContent = pasteBufferRef.current;
+        if (pastedContent) {
+          const newValue = currentInputValue.slice(0, currentCursorPosition) + pastedContent + currentInputValue.slice(currentCursorPosition);
+          const nextPos = currentCursorPosition + pastedContent.length;
           inputValueRef.current = newValue;
           cursorRef.current = nextPos;
           setInputValue(newValue);
           setCursorPosition(nextPos);
         }
+        pasteBufferRef.current = "";
         return;
       }
 
-      // Handle Delete (Right Delete)
-      if (key.name === "delete") {
-        if (currentCursorPosition < currentInputValue.length) {
-          const newValue =
-            currentInputValue.slice(0, currentCursorPosition) +
-            currentInputValue.slice(currentCursorPosition + 1);
-          inputValueRef.current = newValue;
-          setInputValue(newValue);
+      if (key.ctrl && key.name === "a") { setAutoExecute((prev) => !prev); return; }
+
+      // --- Shell 模式逻辑 ---
+      if (key.name === "!" && currentCursorPosition === 0 && currentMode === "agent") { 
+        setMode("shell"); 
+        modeRef.current = "shell";
+        return; 
+      }
+      if (currentMode === "shell") {
+        if (key.name === "escape" || (key.name === "backspace" && currentCursorPosition === 0)) { 
+          setMode("agent"); 
+          modeRef.current = "agent";
+          return; 
+        }
+        if (!isPastingRef.current && (key.name === "return" || key.name === "enter")) {
+          if (currentInputValue.trim()) {
+            const command = currentInputValue.trim();
+            shellHistoryRef.current.push(command);
+            historyIndexRef.current = -1;
+            setMessages((prev) => [...prev, { role: Role.USER, content: `! ${command}`, timestamp: new Date() }]);
+            void (async () => {
+              try {
+                setIsProcessing(true); isProcessingRef.current = true;
+                const commandManager = getCommandManager();
+                const { command_id, pid } = await commandManager.startCommand(command, "Shell mode command");
+                const output = await new Promise<string>((resolve) => {
+                  const check = () => {
+                    const cmd = commandManager.getCommand(command_id);
+                    if (!cmd) { resolve("Command not found"); return; }
+                    if (cmd.status === "running") { setTimeout(check, 100); return; }
+                    resolve(commandManager.getCommandOutput(command_id) || `(exit code: ${cmd.exitCode})`);
+                  };
+                  check();
+                });
+                setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `Command executed (PID: ${pid}):\n${output || "(no output)"}`, timestamp: new Date() }]);
+              } catch (error) {
+                setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`, timestamp: new Date(), error: true }]);
+              } finally { setIsProcessing(false); isProcessingRef.current = false; setMode("agent"); modeRef.current = "agent"; }
+            })();
+            inputValueRef.current = ""; cursorRef.current = 0;
+            setInputValue(""); setCursorPosition(0);
+          }
+          return;
+        }
+      }
+
+      if (messagesRef.current.some(messageHasInterrupt) || isProcessingRef.current) return;
+
+      // --- 回车与粘贴保护 ---
+      if (key.name === "return" || key.name === "enter") {
+        const isActuallyPasting = isPastingRef.current || (Date.now() - lastPasteEndRef.current < 50);
+        if (!isActuallyPasting) {
+          if (suggestionsRef.current.length > 0) {
+            const picked = suggestionsRef.current[selectedIndexRef.current];
+            handleCommand("/" + picked);
+            inputValueRef.current = ""; cursorRef.current = 0;
+            setInputValue(""); setCursorPosition(0); setSuggestions([]); suggestionsRef.current = [];
+            return;
+          }
+          if (currentInputValue.trim()) {
+            handleCommand(currentInputValue.trim());
+            inputValueRef.current = ""; cursorRef.current = 0;
+            setInputValue(""); setCursorPosition(0);
+          }
+        } else {
+          const char = "\n";
+          const newValue = currentInputValue.slice(0, currentCursorPosition) + char + currentInputValue.slice(currentCursorPosition);
+          inputValueRef.current = newValue; cursorRef.current = currentCursorPosition + 1;
+          setInputValue(newValue); setCursorPosition(currentCursorPosition + 1);
         }
         return;
       }
 
-      // 处理打字输入：
-      // 我们通过操作副本字符串并同步更新 Ref + State，确保在 Ink 异步渲染循环中输入不会丢失。
+      // --- 导航与删除 ---
+      if (key.name === "left") { 
+        const p = Math.max(0, cursorRef.current - 1);
+        cursorRef.current = p; setCursorPosition(p); 
+        return; 
+      }
+      if (key.name === "right") { 
+        const p = Math.min(inputValueRef.current.length, cursorRef.current + 1);
+        cursorRef.current = p; setCursorPosition(p); 
+        return; 
+      }
+      if (key.name === "up") {
+        if (suggestionsRef.current.length > 0) {
+          const nextIndex = (selectedIndexRef.current - 1 + suggestionsRef.current.length) % suggestionsRef.current.length;
+          selectedIndexRef.current = nextIndex; setSelectedIndex(nextIndex); return;
+        }
+        const history = currentMode === "shell" ? shellHistoryRef.current : commandHistoryRef.current;
+        if (history.length === 0) return;
+        if (historyIndexRef.current === -1) { draftInputRef.current = inputValueRef.current; historyIndexRef.current = history.length - 1; }
+        else if (historyIndexRef.current > 0) { historyIndexRef.current -= 1; } else return;
+        const historicalCommand = history[historyIndexRef.current];
+        inputValueRef.current = historicalCommand; cursorRef.current = historicalCommand.length;
+        setInputValue(historicalCommand); setCursorPosition(historicalCommand.length);
+        return;
+      }
+      if (key.name === "down") {
+        if (suggestionsRef.current.length > 0) {
+          const nextIndex = (selectedIndexRef.current + 1) % suggestionsRef.current.length;
+          selectedIndexRef.current = nextIndex; setSelectedIndex(nextIndex); return;
+        }
+        const history = currentMode === "shell" ? shellHistoryRef.current : commandHistoryRef.current;
+        if (historyIndexRef.current === -1) return;
+        if (historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current += 1;
+          const historicalCommand = history[historyIndexRef.current];
+          inputValueRef.current = historicalCommand; cursorRef.current = historicalCommand.length;
+          setInputValue(historicalCommand); setCursorPosition(historicalCommand.length);
+        } else {
+          historyIndexRef.current = -1;
+          inputValueRef.current = draftInputRef.current; cursorRef.current = draftInputRef.current.length;
+          setInputValue(draftInputRef.current); setCursorPosition(draftInputRef.current.length);
+          draftInputRef.current = "";
+        }
+        return;
+      }
+      if (key.name === "home") { cursorRef.current = 0; setCursorPosition(0); return; }
+      if (key.name === "end") { cursorRef.current = inputValueRef.current.length; setCursorPosition(inputValueRef.current.length); return; }
+      if (key.name === "backspace") {
+        if (cursorRef.current > 0) {
+          const newValue = inputValueRef.current.slice(0, cursorRef.current - 1) + inputValueRef.current.slice(cursorRef.current);
+          const nextPos = cursorRef.current - 1;
+          inputValueRef.current = newValue; cursorRef.current = nextPos;
+          setInputValue(newValue); setCursorPosition(nextPos);
+        }
+        return;
+      }
+      if (key.name === "delete") {
+        if (cursorRef.current < inputValueRef.current.length) {
+          const newValue = inputValueRef.current.slice(0, cursorRef.current) + inputValueRef.current.slice(cursorRef.current + 1);
+          inputValueRef.current = newValue; setInputValue(newValue);
+        }
+        return;
+      }
+
+      // --- 打字输入逻辑 (支持多字符 sequence) ---
       const isPrintable = key.sequence && !key.ctrl && !key.meta;
-      if (
-        isPrintable &&
-        (key.name === "space" || !key.name || key.name.length === 1)
-      ) {
+      if (isPrintable && (key.name === "space" || !key.name || key.name.length === 1 || isPastingRef.current)) {
         const char = key.name === "space" ? " " : key.sequence;
-        const newValue =
-          currentInputValue.slice(0, currentCursorPosition) +
-          char +
-          currentInputValue.slice(currentCursorPosition);
-        const nextPos = currentCursorPosition + char.length;
-        inputValueRef.current = newValue;
-        cursorRef.current = nextPos;
-        setInputValue(newValue);
-        setCursorPosition(nextPos);
+        if (isPastingRef.current) {
+          pasteBufferRef.current += char;
+        } else {
+          // 在处理打印字符时，立即使用最新的 Ref 拼接
+          const latestValue = inputValueRef.current;
+          const latestPos = cursorRef.current;
+          const newValue = latestValue.slice(0, latestPos) + char + latestValue.slice(latestPos);
+          const nextPos = latestPos + char.length;
+          
+          inputValueRef.current = newValue;
+          cursorRef.current = nextPos;
+          setInputValue(newValue);
+          setCursorPosition(nextPos);
+        }
       }
     };
 
-    const { listener: dataListener, cleanup: cleanupKeyListener } =
-      createDataListener(handleKey);
+    const { listener: dataListener, cleanup: cleanupKeyListener } = createDataListener(handleKey);
+    if (activeQuestionRequest) { cleanupKeyListener(); return; }
     cleanupKeyListenerRef.current = cleanupKeyListener;
     stdin.on("data", dataListener);
+    return () => { stdin.off("data", dataListener); cleanupKeyListener(); };
+  }, [isProcessing, handleCommand, stdin, setRawMode, exit, activeQuestionRequest, mode]);
 
-    return () => {
-      stdin.off("data", dataListener);
-      cleanupKeyListener();
-    };
-  }, [isProcessing, handleCommand, stdin, setRawMode, exit]);
+  const stableMessages = messages.filter((m) => !m.streaming && !messageHasInterrupt(m));
+  const activeMessages = messages.filter((m) => m.streaming || messageHasInterrupt(m));
+  const pendingInterruptMessages = activeMessages.filter(messageHasInterrupt).flatMap((msg) => {
+    if (!Array.isArray(msg.content)) return [];
+    return (msg.content as AssistantMessage[]).filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls).flatMap((b) => b.tool_calls || []).filter((tc) => tc.interrupt);
+  });
 
-  const stableMessages = messages.filter(
-    (m) => !m.streaming && !messageHasInterrupt(m),
-  );
-  const activeMessages = messages.filter(
-    (m) => m.streaming || messageHasInterrupt(m),
-  );
-
-  // 获取当前待处理的所有中断信息（支持多工具同时审批）
-  const pendingInterruptMessages = activeMessages
-    .filter(messageHasInterrupt)
-    .flatMap((msg) => {
-      if (!Array.isArray(msg.content)) return [];
-      const blocks = msg.content as AssistantMessage[];
-      return blocks
-        .filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls)
-        .flatMap((b) => b.tool_calls || [])
-        .filter((tc) => tc.interrupt);
-    });
-
-  // 渲染多工具审批 UI
   const renderPendingApprovals = () => {
     if (pendingInterruptMessages.length === 0) return null;
 
-    const handleSingleDecision = (
-      decision: "approve" | "reject",
-      toolId: string,
-      interrupt: Interrupt,
-    ) => {
-      handleDecision(decision, toolId, interrupt);
-    };
-
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Text color="yellow" bold>
-          Review Required ({pendingInterruptMessages.length} actions):
-        </Text>
+        <Text color="yellow" bold>Review Required ({pendingInterruptMessages.length} actions):</Text>
         {pendingInterruptMessages.map((tc, index) => {
           if (!tc.interrupt) return null;
           return (
-            <Box
-              key={tc.id || index}
-              flexDirection="column"
-              marginLeft={2}
-              marginTop={1}
-              padding={1}
-              borderStyle="round"
-              borderColor="yellow"
-            >
-              <Text color="yellow" bold>
-                {index + 1}. {tc.name}
-              </Text>
-              <Text dimColor>
-                {Object.entries(tc.args)
-                  .map(([k, v]) => `${k}: ${v}`)
-                  .join(", ")}
-              </Text>
-              <Text color="yellow" dimColor>
-                {tc.interrupt.value?.action_requests?.[0]?.description ||
-                  "Action requires approval"}
-              </Text>
-              <Box marginTop={1}>
-                <SelectInput
-                  items={[
-                    { label: t("hitl.approveLabel"), value: "approve" },
-                    { label: t("hitl.rejectLabel"), value: "reject" },
-                  ]}
-                  onSelect={(item) =>
-                    handleSingleDecision(
-                      item.value as "approve" | "reject",
-                      tc.id || "",
-                      tc.interrupt!,
-                    )
-                  }
-                />
-              </Box>
+            <Box key={tc.id || index} flexDirection="column" marginLeft={2} marginTop={1} padding={1} borderStyle="round" borderColor="yellow" width={innerWidth}>
+              <Text color="yellow" bold>{index + 1}. {tc.name}</Text>
+              <Text dimColor wrap="wrap">{Object.entries(tc.args).map(([k, v]) => `${k}: ${v}`).join(", ")}</Text>
+              <Text color="yellow" dimColor wrap="wrap">{tc.interrupt.value?.action_requests?.[0]?.description || "Action requires approval"}</Text>
+              <Box marginTop={1}><SelectInput items={[{ label: t("hitl.approveLabel"), value: "approve" }, { label: t("hitl.rejectLabel"), value: "reject" }]} onSelect={(item) => handleDecision(item.value as "approve" | "reject", tc.id || "", tc.interrupt!)} /></Box>
             </Box>
           );
         })}
-        {pendingInterruptMessages.length > 1 && (
-          <Box flexDirection="column" marginTop={1} marginLeft={2}>
-            <Text color="cyan" bold>
-              Tip: Approve or reject each action individually above.
-            </Text>
-          </Box>
-        )}
       </Box>
     );
   };
 
-  // --- 渲染逻辑 ---
-  // 基于消息状态分两部分渲染：Static 组件用于持久化历史，普通 Box 用于显示动态更新和交互输入
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Banner 必须作为渲染树中第一个 Static 元素，才能确保永久固定在终端最上方 */}
       <Static items={["banner"]} key="brand-banner">
         {(item) => (
-          <Box
-            key={item}
-            marginBottom={1}
-            flexDirection="column"
-            alignItems="center"
-            width="100%"
-          >
-            <Gradient name="morning">
-              <BigText text="OpenShell" font="block" />
-            </Gradient>
+          <Box key={item} marginBottom={1} flexDirection="column" alignItems="center" width="100%">
+            <Gradient name="morning"><BigText text="OpenShell" font="block" /></Gradient>
             <Box marginTop={1} flexDirection="row" gap={2}>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Enter
-                </Text>
-                <Text dimColor>{t("shortcuts.sendLabel")}</Text>
-              </Box>
+              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Enter</Text><Text dimColor>{t("shortcuts.sendLabel")}</Text></Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Esc
-                </Text>
-                <Text dimColor>{t("shortcuts.cancelLabel")}</Text>
-              </Box>
+              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Esc</Text><Text dimColor>{t("shortcuts.cancelLabel")}</Text></Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Ctrl+A
-                </Text>
-                <Text dimColor>{t("status.autoExecuteLabel")}</Text>
-              </Box>
+              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Ctrl+A</Text><Text dimColor>{t("status.autoExecuteLabel")}</Text></Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  ↑/↓
-                </Text>
-                <Text dimColor>{t("shortcuts.historyLabel")}</Text>
-              </Box>
+              <Box flexDirection="row" gap={1}><Text color="cyan" bold>↑/↓</Text><Text dimColor>{t("shortcuts.historyLabel")}</Text></Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Ctrl+C
-                </Text>
-                <Text dimColor>{t("shortcuts.exitLabel")}</Text>
-              </Box>
+              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Ctrl+C</Text><Text dimColor>{t("shortcuts.exitLabel")}</Text></Box>
             </Box>
           </Box>
         )}
@@ -1232,110 +742,82 @@ ${t("help.withAiAgent")}`,
 
       {isLoading ? (
         <Box flexDirection="column" marginY={1}>
-          <Box flexDirection="row" alignItems="center" gap={1}>
-            <Spinner type="dots" />
-            <Text>{t("app.initializing")}...</Text>
-          </Box>
+          <Box flexDirection="row" alignItems="center" gap={1}><Spinner type="dots" /><Text>{t("app.initializing")}...</Text></Box>
         </Box>
       ) : (
         <>
           <Static items={stableMessages} key="static-history">
-            {(msg) => (
+            {(msg, index) => (
               <MessageComponent
-                key={`${msg.timestamp.getTime()}-${Math.random()}`}
+                key={`stable-${msg.timestamp.getTime()}-${index}`}
                 message={msg}
               />
             )}
           </Static>
-          {activeMessages.map((msg) => (
+          {activeMessages.map((msg, index) => (
             <MessageComponent
-              key={`${msg.timestamp.getTime()}-${Math.random()}`}
+              key={`active-${msg.timestamp.getTime()}-${index}`}
               message={msg}
             />
           ))}
-          <Box
-            flexDirection="column"
-            marginTop={
-              activeMessages.length > 0 || stableMessages.length > 0 ? 1 : 0
-            }
-          >
-            <Box flexDirection="row" justifyContent="space-between">
+          <Box flexDirection="column" marginTop={activeMessages.length > 0 || stableMessages.length > 0 ? 1 : 0}>
+            <Box flexDirection="row" justifyContent="space-between" width={mainWidth}>
               <Box flexDirection="row" alignItems="center" gap={1}>
-                <Text bold color="cyan">
-                  🚀 OpenShell {config.version}
-                </Text>
+                <Text bold color="cyan">🚀 OpenShell {config.version}</Text>
                 <Text dimColor>|</Text>
-                <Text bold color={mode === "shell" ? "green" : "cyan"}>
-                  [{mode === "shell" ? "Shell" : "Agent"}]
-                </Text>
+                <Text bold color={mode === "shell" ? "green" : "cyan"}>[{mode === "shell" ? "Shell" : "Agent"}]</Text>
               </Box>
               <Box flexDirection="row" gap={2}>
-                <Text color="magenta">
-                  {t("status.runningLabel")}: {runningCommands} |
-                </Text>
-                <Text color="magenta">
-                  {t("status.autoExecuteLabel")}(Ctrl+A):{" "}
-                  {autoExecute ? "✓" : "✗"}
-                </Text>
+                <Text color="magenta">{t("status.runningLabel")}: {runningCommands} |</Text>
+                <Text color="magenta">{t("status.autoExecuteLabel")}(Ctrl+A): {autoExecute ? "✓" : "✗"}</Text>
               </Box>
             </Box>
-            <Separator />
+            <Separator width={mainWidth} />
             <Box flexDirection="column" marginTop={1} marginBottom={1}>
-              {pendingInterruptMessages.length > 0 ? (
+              {activeQuestionRequest ? (
+                <AskUserDialog request={activeQuestionRequest} onFinished={() => setActiveQuestionRequest(null)} />
+              ) : pendingInterruptMessages.length > 0 ? (
                 <Box flexDirection="column">{renderPendingApprovals()}</Box>
               ) : (
-                <Box flexDirection="row" alignItems="center">
-                  <Text color={isProcessing ? "gray" : "white"} bold>
-                    {"> "}
-                  </Text>
-                  <Box flexDirection="row">
+                <Box flexDirection="row" paddingX={1} borderStyle="round" borderColor={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} alignItems="flex-start" width={mainWidth}>
+                  <Text color={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} bold>{mode === "shell" ? "! " : "> "}</Text>
+                  <Box flexGrow={1}>
                     {isProcessing ? (
-                      inputValue ? (
-                        <Text dimColor>{inputValue}</Text>
-                      ) : (
-                        <Text color="yellow">
-                          <Spinner type="dots" />
-                        </Text>
-                      )
+                      inputValue ? <Text dimColor wrap="wrap">{inputValue}</Text> : <Box flexDirection="row"><Text color="yellow"><Spinner type="dots" /></Text><Text dimColor> Processing...</Text></Box>
+                    ) : inputValue.length === 0 ? (
+                      <Text><Text inverse>T</Text><Text dimColor>ype your message or ! for shell mode</Text></Text>
                     ) : (
-                      <>
-                        <Text>{inputValue.slice(0, cursorPosition)}</Text>
-                        <Text inverse>{inputValue[cursorPosition] || " "}</Text>
-                        <Text>{inputValue.slice(cursorPosition + 1)}</Text>
-                      </>
+                      <Text wrap="wrap"><Text>{inputValue.slice(0, cursorPosition)}</Text><Text inverse>{inputValue[cursorPosition] || " "}</Text><Text>{inputValue.slice(cursorPosition + 1)}</Text></Text>
                     )}
                   </Box>
                 </Box>
               )}
-              {suggestions.length > 0 && (
-                <Box
-                  flexDirection="column"
-                  marginTop={1}
-                  paddingLeft={2}
-                  borderStyle="round"
-                  borderColor="gray"
-                >
-                  {suggestions.map((cmd, idx) => (
-                    <Box key={cmd}>
-                      <Text
-                        color={idx === selectedIndex ? "cyan" : "white"}
-                        bold={idx === selectedIndex}
-                      >
-                        {idx === selectedIndex ? "→ " : "  "}/{cmd}
+              <Box paddingX={2} marginTop={0} marginBottom={1} flexDirection="row" justifyContent="space-between" width={mainWidth}>
+                <Box><Text dimColor color="gray">🏠 {shortenPath(tildeifyPath(currentDir))}</Text></Box>
+                <Box flexDirection="row">
+                  {mode === "shell" && (
+                    <Box marginRight={2}>
+                      <Text dimColor color="yellow">
+                        (Press Esc to exit Shell Mode)
                       </Text>
                     </Box>
-                  ))}
+                  )}
+                  <Text dimColor color="blue">
+                    🤖 {modelName}
+                  </Text>
+                </Box>
+              </Box>
+              {suggestions.length > 0 && (
+                <Box flexDirection="column" marginTop={1} paddingLeft={2} borderStyle="round" borderColor="gray" width={innerWidth}>
+                  {suggestions.map((cmd, idx) => (<Box key={cmd}><Text color={idx === selectedIndex ? "cyan" : "white"} bold={idx === selectedIndex}>{idx === selectedIndex ? "→ " : "  "}/{cmd}</Text></Box>))}
                 </Box>
               )}
             </Box>
           </Box>
+
         </>
       )}
-      {config.debug && (
-        <Box marginBottom={1}>
-          <Text color="yellow">DEBUG: {t("app.debugMode")}</Text>
-        </Box>
-      )}
+      {config.debug && <Box marginBottom={1}><Text color="yellow">DEBUG: {t("app.debugMode")}</Text></Box>}
     </Box>
   );
 }

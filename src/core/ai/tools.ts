@@ -8,6 +8,7 @@ import { z } from "zod";
 import { spawn, type ChildProcess } from "child_process";
 import { getCommandManager } from "../session/command-manager.js";
 import { createFileTools } from "./file-tools.js";
+import { Question, type QuestionType } from "../question.js";
 
 // Track running child processes for cleanup on exit
 const runningProcesses = new Map<ChildProcess, ProcessInfo>();
@@ -366,11 +367,103 @@ The process has been terminated. Use command_cleanup to remove the record.`;
 
   const fileTools = createFileTools();
 
+  /**
+   * ask_user - Ask the user questions for clarification
+   */
+  const askUserTool = tool(
+    async (input: {
+      questions: Array<{
+        type: QuestionType;
+        question: string;
+        header: string;
+        options?: Array<{ label: string; description: string }>;
+        multiple?: boolean;
+        placeholder?: string;
+      }>;
+    }) => {
+      const { questions } = input;
+
+      if (!questions || questions.length === 0) {
+        return "Error: At least one question is required.";
+      }
+
+      const requestId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        const answers = await Question.ask({
+          id: requestId,
+          questions: questions.map((q) => ({
+            type: q.type,
+            question: q.question,
+            header: q.header,
+            options: q.options,
+            multiple: q.multiple ?? false,
+            placeholder: q.placeholder,
+          })),
+        });
+
+        const formattedAnswers = questions
+          .map((q, i) => {
+            const answerList = answers[i] || [];
+            return `"${q.question}"="${answerList.join(", ") || "(no answer)"}"`;
+          })
+          .join("; ");
+
+        return `User provided answers: ${formattedAnswers}. Proceed with this context.`;
+      } catch (error) {
+        return `User dismissed the question without answering or an error occurred: ${error instanceof Error ? error.message : "Unknown error"}`;
+      }
+    },
+    {
+      name: "ask_user",
+      description:
+        "Ask the user questions for clarification when their request is ambiguous or more information is needed.",
+      schema: z.object({
+        questions: z
+          .array(
+            z.object({
+              type: z
+                .enum(["text", "choice", "yesno"])
+                .describe("Question type"),
+              question: z.string().describe("The actual question to ask"),
+              header: z
+                .string()
+                .describe(
+                  "Short label for this question (e.g. 'Config', 'Confirmation')"
+                ),
+              options: z
+                .array(
+                  z.object({
+                    label: z.string().describe("Concise label"),
+                    description: z
+                      .string()
+                      .describe("Detailed choice explanation"),
+                  })
+                )
+                .optional()
+                .describe("Options for 'choice' type (2-5 recommended)"),
+              multiple: z
+                .boolean()
+                .optional()
+                .describe("Allow multiple selection for choice type"),
+              placeholder: z
+                .string()
+                .optional()
+                .describe("Hint text for text type"),
+            })
+          )
+          .min(1)
+          .describe("Questions to present to the user"),
+      }),
+    }
+  );
+
   return [
     runCommandTool,
     commandStatusTool,
     commandStopTool,
     commandCleanupTool,
+    askUserTool,
     ...fileTools,
   ];
 }

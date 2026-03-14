@@ -103,7 +103,7 @@ export async function main() {
 
   // 渲染主应用容器组件
   render(<AppContainer config={config} />, {
-    // 按Ctrl+C时退出应用
-    exitOnCtrlC: true,
+    // 禁用默认的 Ctrl+C 退出，交由 AppContainer 的按键逻辑处理，以实现清空输入框等高级交互
+    exitOnCtrlC: false,
   });
 }

@@ -28,4 +28,7 @@ npm-debug.log*
 # Cache
 .eslintcache
 
+# External
+gemini-cli/
+
 bin-dist
