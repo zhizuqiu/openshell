@@ -120,6 +120,7 @@ export interface Config {
   query?: string;
   interactive?: boolean;
   lang: "zh-CN" | "en-US";
+  sessionId?: string;
 }
 
 export interface AppContainerProps {

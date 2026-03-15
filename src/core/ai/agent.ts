@@ -7,10 +7,12 @@ import {
   initChatModel,
   humanInTheLoopMiddleware,
 } from "langchain";
-import { MemorySaver } from "@langchain/langgraph";
+import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import type { ReactAgent } from "langchain";
 import { createShellTools } from "./tools.js";
 import os from "os";
+import path from "path";
+import fs from "fs/promises";
 
 export interface AgentConfig {
   apiKey: string;
@@ -18,8 +20,24 @@ export interface AgentConfig {
   model: string;
 }
 
-// Initialize a shared memory saver for the agent session
-const checkpointer = new MemorySaver();
+// Global checkpointer instance
+let checkpointer: SqliteSaver | null = null;
+
+/**
+ * Initialize the SQLite checkpointer
+ */
+async function getCheckpointer() {
+  if (checkpointer) return checkpointer;
+
+  const dbDir = path.join(os.homedir(), ".openshell");
+  await fs.mkdir(dbDir, { recursive: true });
+  
+  const dbPath = path.join(dbDir, "openshell.db");
+  
+  // Use fromConnString for more robust internal setup
+  checkpointer = SqliteSaver.fromConnString(dbPath);
+  return checkpointer;
+}
 
 export async function createShellAgent(
   config: AgentConfig,
@@ -33,6 +51,7 @@ export async function createShellAgent(
   });
 
   const tools = createShellTools();
+  const currentCheckpointer = await getCheckpointer();
 
   const systemMessage = `## Guidelines
 
@@ -111,7 +130,7 @@ Only access files outside this directory when explicitly requested.`;
     model,
     tools,
     systemPrompt: systemMessage,
-    checkpointer,
+    checkpointer: currentCheckpointer,
     middleware: [
       humanInTheLoopMiddleware({
         interruptOn: {

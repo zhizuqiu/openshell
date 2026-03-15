@@ -43,6 +43,8 @@ interface Arguments {
   autoExecute?: boolean;
   // 查询参数
   query?: string;
+  // 会话 ID
+  session?: string;
   // 位置参数数组，包含用户输入的查询内容
   _: (string | number)[];
 }
@@ -71,6 +73,12 @@ export async function main() {
       type: "string",
       description: "直接执行的查询内容",
     })
+    // 会话 ID 选项
+    .option("session", {
+      alias: "s",
+      type: "string",
+      description: "指定会话 ID 以恢复之前的对话（不指定则创建新会话）",
+    })
     // 设置版本信息
     .version(getVersion())
     // 启用帮助选项
@@ -87,6 +95,9 @@ export async function main() {
     query = argv._.join(" ");
   }
 
+  // 生成或恢复会话 ID
+  const sessionId = argv.session || "s_" + Math.random().toString(36).substring(2, 8);
+
   // 创建应用程序配置对象
   const config = {
     // 调试模式标志
@@ -99,6 +110,8 @@ export async function main() {
     query: query || undefined,
     // 语言配置
     lang: (process.env["OPENSHHELL_LANG"] as "zh-CN" | "en-US") || "en-US",
+    // 会话 ID
+    sessionId,
   };
 
   // 渲染主应用容器组件

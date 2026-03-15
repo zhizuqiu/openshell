@@ -182,7 +182,10 @@ export function AppContainer({ config }: AppContainerProps) {
         const model = process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo";
 
         if (!apiKey || !baseURL) {
-          setMessages([{ role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() }, { role: Role.SYSTEM, content: t("app.aiNotConfigured"), timestamp: new Date() }]);
+          setMessages([
+            { role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() },
+            { role: Role.SYSTEM, content: t("app.aiNotConfigured"), timestamp: new Date() }
+          ]);
           setIsLoading(false);
           return;
         }
@@ -191,6 +194,53 @@ export function AppContainer({ config }: AppContainerProps) {
         const shellAgent = await createShellAgent(agentConfig);
         setAgent(shellAgent);
         setModelName(model);
+
+        // --- 恢复历史记录 ---
+        const threadId = config.sessionId || "main-session";
+        const state = await shellAgent.graph.getState({
+          configurable: { thread_id: threadId },
+        });
+
+        if (state && state.values && Array.isArray(state.values.messages)) {
+          const langChainMessages = state.values.messages as any[];
+          const restoredMessages: Message[] = langChainMessages
+            .map((m) => {
+              // 映射 LangChain 消息到 OpenShell UI 消息
+              let role: Role = Role.ASSISTANT;
+              if (m._getType() === "human") role = Role.USER;
+              else if (m._getType() === "system") role = Role.SYSTEM;
+
+              let content: any = m.content;
+              
+              // 尝试解析助手消息中的结构化数据（如果是 AssistantMessage 数组的字符串表示）
+              if (role === Role.ASSISTANT && typeof content === "string") {
+                try {
+                  const parsed = JSON.parse(content);
+                  if (Array.isArray(parsed)) content = parsed;
+                } catch {
+                  // 如果不是 JSON，保持原样（TEXT 块）
+                  content = [{ type: MsgType.TEXT, content }];
+                }
+              }
+
+              return {
+                role,
+                content,
+                timestamp: new Date(m.additional_kwargs?.timestamp || Date.now()),
+              };
+            })
+            .filter((m) => m.role !== "system" || m.content !== ""); // 过滤掉空的系统消息
+
+          if (restoredMessages.length > 0) {
+            setMessages(restoredMessages);
+            // 填充 seenMessageIdsRef 防止重复
+            langChainMessages.forEach(m => { if (m.id) seenMessageIdsRef.current.add(m.id); });
+          } else {
+            setMessages([{ role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() }]);
+          }
+        } else {
+          setMessages([{ role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() }]);
+        }
       } catch (error) {
         handleError(error);
       } finally {
@@ -253,10 +303,16 @@ export function AppContainer({ config }: AppContainerProps) {
       setMessages((prev) => [...prev, { role: Role.USER, content: trimmed, timestamp: new Date() }]);
     }
 
-    if (trimmed.startsWith("/")) {
+      if (trimmed.startsWith("/")) {
       const cmd = trimmed.slice(1).toLowerCase().split(" ")[0];
       if (cmd === "clear") { setMessages([]); seenMessageIdsRef.current.clear(); return; }
-      if (cmd === "exit") { exit(); setTimeout(() => process.exit(0), 100); return; }
+      if (cmd === "exit") { 
+        console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
+        console.log(`  \x1b[1mopenshell --session ${config.sessionId}\x1b[0m\n`);
+        exit(); 
+        setTimeout(() => process.exit(0), 100); 
+        return; 
+      }
       if (cmd === "version") { setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `OpenShell ${config.version}`, timestamp: new Date() }]); return; }
       if (cmd === "help") {
         setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `${t("help.availableCommands")}\n  /help    - ${t("help.helpCommand")}\n  /version - ${t("help.versionCommand")}\n  /clear   - ${t("help.clearCommand")}\n  /command - ${t("help.commandCommand")}\n  /exit    - ${t("help.exitCommand")}\n\n${t("help.withAiAgent")}`, timestamp: new Date() }]);
@@ -304,7 +360,13 @@ export function AppContainer({ config }: AppContainerProps) {
         return next;
       });
       if (!agent) return;
-      const stream = await agent.stream({ messages: [{ role: Role.USER, content: cmd }] }, { streamMode: "updates", configurable: { thread_id: "main-session" } });
+      const stream = await agent.stream(
+        { messages: [{ role: Role.USER, content: cmd }] },
+        { 
+          streamMode: "updates", 
+          configurable: { thread_id: config.sessionId || "main-session" } 
+        }
+      );
       currentStreamRef.current = stream;
       await processAiStream(stream, abortControllerRef.current);
       currentStreamRef.current = null;
@@ -439,7 +501,9 @@ export function AppContainer({ config }: AppContainerProps) {
     });
     try {
       if (agent) {
-        const history = await agent.graph.getState({ configurable: { thread_id: "main-session" } });
+        const history = await agent.graph.getState({ 
+          configurable: { thread_id: config.sessionId || "main-session" } 
+        });
         if (history?.values?.messages) { (history.values.messages as BaseMessage[]).forEach(msg => { if (msg.id) seenMessageIdsRef.current.add(msg.id); }); }
       }
     } catch (e) {}
@@ -471,7 +535,13 @@ export function AppContainer({ config }: AppContainerProps) {
       });
       let decisions = [{ type: decision }];
       if (interrupt?.value?.action_requests) decisions = interrupt.value.action_requests.map(() => ({ type: decision }));
-      const stream = await agent.stream(new Command({ resume: { [interrupt.id]: { decisions } } }) as any, { streamMode: "updates", configurable: { thread_id: "main-session" } });
+      const stream = await agent.stream(
+        new Command({ resume: { [interrupt.id]: { decisions } } }) as any, 
+        { 
+          streamMode: "updates", 
+          configurable: { thread_id: config.sessionId || "main-session" } 
+        }
+      );
       await processAiStream(stream, abortControllerRef.current!);
     } catch (error) { handleError(error); } finally { activeStreamsRef.current--; if (activeStreamsRef.current <= 0) setIsProcessing(false); }
   };
@@ -499,6 +569,8 @@ export function AppContainer({ config }: AppContainerProps) {
           setInputValue("");
           setCursorPosition(0);
         } else {
+          console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
+          console.log(`  \x1b[1mopenshell --session ${config.sessionId}\x1b[0m\n`);
           exit();
           setTimeout(() => process.exit(0), 100);
         }
