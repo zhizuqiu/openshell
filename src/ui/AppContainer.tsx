@@ -140,6 +140,32 @@ export function AppContainer({ config }: AppContainerProps) {
       if (state && state.values && Array.isArray(state.values.messages)) {
         const langChainMessages = state.values.messages as any[];
 
+        // Debug: 打印第一条 AI 消息的结构
+        const debugAiMsg = langChainMessages.find(
+          (m) =>
+            m.type === "ai" ||
+            m.kwargs?.type === "ai" ||
+            m.id?.[2]?.includes("AI"),
+        );
+        if (debugAiMsg && process.env["OPENSHHELL_DEBUG"] === "true") {
+          console.log("=== DEBUG AI Message Structure ===");
+          console.log("msg.type:", debugAiMsg.type);
+          console.log("msg.kwargs?.tool_calls:", debugAiMsg.kwargs?.tool_calls);
+          console.log(
+            "msg.kwargs?.kwargs?.tool_calls:",
+            debugAiMsg.kwargs?.kwargs?.tool_calls,
+          );
+          console.log("msg.tool_calls:", debugAiMsg.tool_calls);
+          console.log(
+            "msg.content (first 200):",
+            debugAiMsg.content?.substring(0, 200),
+          );
+          console.log(
+            "msg.kwargs.content (first 200):",
+            debugAiMsg.kwargs?.content?.substring(0, 200),
+          );
+        }
+
         const restoredMessages: Message[] = langChainMessages
           .map((m) => {
             const kwargs = m.kwargs || m;
@@ -176,8 +202,13 @@ export function AppContainer({ config }: AppContainerProps) {
               const assistantContent: AssistantMessage[] = [];
 
               // 1. 先检查是否有 tool_calls（优先处理工具调用）
+              // 检查多个可能的位置：m.tool_calls, kwargs.tool_calls, m.kwargs.tool_calls, m.kwargs.kwargs.tool_calls
               const toolCalls =
-                m.tool_calls || kwargs.tool_calls || m.kwargs?.tool_calls || [];
+                m.tool_calls ||
+                kwargs.tool_calls ||
+                m.kwargs?.tool_calls ||
+                m.kwargs?.kwargs?.tool_calls ||
+                [];
 
               if (Array.isArray(toolCalls) && toolCalls.length > 0) {
                 const formattedToolCalls: ToolCall[] = toolCalls.map((tc) => ({
@@ -195,12 +226,40 @@ export function AppContainer({ config }: AppContainerProps) {
 
               // 2. 处理文本内容
               if (typeof content === "string" && content.trim()) {
+                // 检查 content 是否是序列化的 AssistantMessage[] 数组
                 if (content.trim().startsWith("[")) {
                   try {
                     const parsed = JSON.parse(content);
                     if (Array.isArray(parsed)) {
-                      // 已经是 AssistantMessage[] 格式
-                      assistantContent.push(...parsed);
+                      // 检查是否是 AssistantMessage[] 格式（有 type 字段）
+                      if (parsed.length > 0 && parsed[0]?.type) {
+                        assistantContent.push(...parsed);
+                      } else {
+                        // 可能是旧格式的工具调用数组，转换为 TOOL_CALL 格式
+                        const hasToolCalls = parsed.some(
+                          (item) => item.name || item.function || item.id,
+                        );
+                        if (hasToolCalls) {
+                          const formattedOldFormat: ToolCall[] = parsed.map(
+                            (tc) => ({
+                              id: tc.id || tc.function?.id || "",
+                              name: tc.name || tc.function?.name || "unknown",
+                              args: tc.args || tc.function?.arguments || {},
+                              result: tc.result,
+                              status: tc.status || ToolCallStatus.SUCCESS,
+                            }),
+                          );
+                          assistantContent.push({
+                            type: MsgType.TOOL_CALL,
+                            tool_calls: formattedOldFormat,
+                          });
+                        } else {
+                          assistantContent.push({
+                            type: MsgType.TEXT,
+                            content,
+                          });
+                        }
+                      }
                     } else {
                       assistantContent.push({ type: MsgType.TEXT, content });
                     }
