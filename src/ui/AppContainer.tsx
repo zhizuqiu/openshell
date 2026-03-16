@@ -814,9 +814,15 @@ export function AppContainer({ config }: AppContainerProps) {
         const tc = block?.tool_calls?.find((t) => t.interrupt);
         if (tc && tc.interrupt) {
           // 为所有 action_requests 生成批准决策
-          const allToolIds = tc.interrupt.value?.action_requests?.map(
-            () => tc.id || "",
-          );
+          const actionRequestsCount =
+            tc.interrupt.value?.action_requests?.length || 0;
+          // 统计当前消息中所有带 interrupt 的 tool_calls 数量
+          const interruptCount = (pendingMsg.content as AssistantMessage[])
+            .filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls)
+            .flatMap((b) => b.tool_calls || [])
+            .filter((t) => t.interrupt).length;
+          const count = Math.max(actionRequestsCount, interruptCount, 1);
+          const allToolIds = Array(count).fill(tc.id || "");
           await handleDecision(
             "approve",
             tc.id || "",
@@ -925,9 +931,12 @@ export function AppContainer({ config }: AppContainerProps) {
           hasInterrupt = true;
           if (autoExecute) {
             // autoExecute 模式：为所有 action_requests 生成批准决策
-            const allToolIds = interrupt.value?.action_requests?.map(
-              () => lastToolCallId || "",
-            );
+            // 优先从 action_requests 获取数量，否则从 pendingInterruptMessages 获取
+            const actionRequestsCount =
+              interrupt.value?.action_requests?.length || 0;
+            const pendingCount = pendingInterruptMessages.length;
+            const count = Math.max(actionRequestsCount, pendingCount, 1);
+            const allToolIds = Array(count).fill(lastToolCallId || "");
             handleDecision(
               "approve",
               lastToolCallId || "",
@@ -1130,18 +1139,17 @@ export function AppContainer({ config }: AppContainerProps) {
 
       // 构建决策数组
       let decisions: { type: string }[] = [];
-      if (interrupt?.value?.action_requests) {
-        // 如果有多个 action_requests，需要为每个生成决策
-        if (allToolIds && allToolIds.length > 1) {
-          // 批量确认模式：所有工具都使用相同的决策
-          decisions = allToolIds.map(() => ({ type: decision }));
-        } else {
-          // 单个确认模式
-          decisions = interrupt.value.action_requests.map(() => ({
-            type: decision,
-          }));
-        }
+
+      // 优先使用 allToolIds 来决定决策数量（批量确认模式）
+      if (allToolIds && allToolIds.length > 0) {
+        decisions = allToolIds.map(() => ({ type: decision }));
+      } else if (interrupt?.value?.action_requests) {
+        // 从 action_requests 获取数量
+        decisions = interrupt.value.action_requests.map(() => ({
+          type: decision,
+        }));
       } else {
+        // 回退：单个决策
         decisions = [{ type: decision }];
       }
 
