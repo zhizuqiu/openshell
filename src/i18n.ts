@@ -78,6 +78,8 @@ interface Translations {
   hitl: {
     approveLabel: string;
     rejectLabel: string;
+    approveAllLabel: string;
+    rejectAllLabel: string;
   };
   tools: {
     readFileName: string;
@@ -176,6 +178,8 @@ const translations: Record<Language, Translations> = {
     hitl: {
       approveLabel: "批准",
       rejectLabel: "拒绝",
+      approveAllLabel: "全部批准",
+      rejectAllLabel: "全部拒绝",
     },
     tools: {
       readFileName: "读取文件",
@@ -279,6 +283,8 @@ const translations: Record<Language, Translations> = {
     hitl: {
       approveLabel: "Approve",
       rejectLabel: "Reject",
+      approveAllLabel: "Approve All",
+      rejectAllLabel: "Reject All",
     },
     tools: {
       readFileName: "Read File",

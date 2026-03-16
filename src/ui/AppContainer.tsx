@@ -1080,6 +1080,7 @@ export function AppContainer({ config }: AppContainerProps) {
     decision: "approve" | "reject",
     toolId: string,
     interrupt?: Interrupt,
+    allToolIds?: string[], // 新增：支持批量确认时传入所有工具 ID
   ) => {
     if (!agent || !interrupt) return;
     activeStreamsRef.current++;
@@ -1108,11 +1109,24 @@ export function AppContainer({ config }: AppContainerProps) {
         }
         return next;
       });
-      let decisions = [{ type: decision }];
-      if (interrupt?.value?.action_requests)
-        decisions = interrupt.value.action_requests.map(() => ({
-          type: decision,
-        }));
+
+      // 构建决策数组
+      let decisions: { type: string }[] = [];
+      if (interrupt?.value?.action_requests) {
+        // 如果有多个 action_requests，需要为每个生成决策
+        if (allToolIds && allToolIds.length > 1) {
+          // 批量确认模式：所有工具都使用相同的决策
+          decisions = allToolIds.map(() => ({ type: decision }));
+        } else {
+          // 单个确认模式
+          decisions = interrupt.value.action_requests.map(() => ({
+            type: decision,
+          }));
+        }
+      } else {
+        decisions = [{ type: decision }];
+      }
+
       const stream = await agent.stream(
         new Command({ resume: { [interrupt.id]: { decisions } } }) as any,
         {
@@ -1582,6 +1596,9 @@ export function AppContainer({ config }: AppContainerProps) {
   const renderPendingApprovals = () => {
     if (pendingInterruptMessages.length === 0) return null;
 
+    // 获取所有待确认的工具调用的 interrupt（它们共享同一个 interrupt）
+    const firstInterrupt = pendingInterruptMessages[0]?.interrupt;
+
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
         <Text color="yellow" bold>
@@ -1589,6 +1606,36 @@ export function AppContainer({ config }: AppContainerProps) {
             count: String(pendingInterruptMessages.length),
           })}
         </Text>
+
+        {/* 批量操作按钮 */}
+        {pendingInterruptMessages.length > 1 && (
+          <Box flexDirection="row" marginTop={1} marginBottom={1}>
+            <Box marginRight={2}>
+              <SelectInput
+                items={[
+                  {
+                    label: t("hitl.approveAllLabel"),
+                    value: "approve-all",
+                  },
+                  {
+                    label: t("hitl.rejectAllLabel"),
+                    value: "reject-all",
+                  },
+                ]}
+                onSelect={(item) => {
+                  const decision =
+                    item.value === "approve-all" ? "approve" : "reject";
+                  const allIds = pendingInterruptMessages.map(
+                    (tc) => tc.id || "",
+                  );
+                  handleDecision(decision, "", firstInterrupt, allIds);
+                }}
+              />
+            </Box>
+          </Box>
+        )}
+
+        {/* 单个工具确认列表 */}
         {pendingInterruptMessages.map((tc, index) => {
           if (!tc.interrupt) return null;
           return (
