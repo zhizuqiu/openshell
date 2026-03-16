@@ -1632,7 +1632,10 @@ export function AppContainer({ config }: AppContainerProps) {
         {/* 批量操作按钮 */}
         {pendingInterruptMessages.length > 1 && (
           <Box flexDirection="row" marginTop={1} marginBottom={1}>
-            <Box marginRight={2}>
+            <Box
+              marginRight={2}
+              width={Math.max((process.stdout.columns || 80) - 8, 40)}
+            >
               <SelectInput
                 items={[
                   {
@@ -1691,7 +1694,10 @@ export function AppContainer({ config }: AppContainerProps) {
                     ?.allowed_decisions?.[0] ||
                   t("app.actionRequiresApproval")}
               </Text>
-              <Box marginTop={1}>
+              <Box
+                marginTop={1}
+                width={Math.max((process.stdout.columns || 80) - 8, 40)}
+              >
                 <SelectInput
                   items={[
                     { label: t("hitl.approveLabel"), value: "approve" },
