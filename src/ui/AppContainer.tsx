@@ -211,13 +211,13 @@ export function AppContainer({ config }: AppContainerProps) {
           setMessages([
             {
               role: Role.SYSTEM,
-              content: `Loading session: ${threadId}...`,
+              content: t("app.loadingSession", { sessionId: threadId }),
               timestamp: new Date(),
             },
             ...restoredMessages,
             {
               role: Role.SYSTEM,
-              content: `Switched to session: ${threadId}`,
+              content: t("app.switchedToSession", { sessionId: threadId }),
               timestamp: new Date(),
             },
           ]);
@@ -521,7 +521,7 @@ export function AppContainer({ config }: AppContainerProps) {
         return;
       }
       if (cmd === "exit") {
-        console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
+        console.log(`\n\n  \x1b[36m${t("app.toResumeSession")}\x1b[0m`);
         console.log(`  \x1b[1mopenshell --session ${activeSessionId}\x1b[0m\n`);
         exit();
         setTimeout(() => process.exit(0), 100);
@@ -613,7 +613,9 @@ export function AppContainer({ config }: AppContainerProps) {
                 ...prev,
                 {
                   role: Role.ASSISTANT,
-                  content: `Failed to list sessions: ${err.message}`,
+                  content: t("app.failedToListSessions", {
+                    error: err.message,
+                  }),
                   timestamp: new Date(),
                   error: true,
                 },
@@ -632,7 +634,7 @@ export function AppContainer({ config }: AppContainerProps) {
               ...prev,
               {
                 role: Role.ASSISTANT,
-                content: "Error: Agent not ready",
+                content: t("app.agentNotReadyError"),
                 timestamp: new Date(),
                 error: true,
               },
@@ -976,7 +978,7 @@ export function AppContainer({ config }: AppContainerProps) {
       ...prev,
       {
         role: Role.ASSISTANT,
-        content: `System Error: ${errorMsg}`,
+        content: t("app.systemError", { error: errorMsg }),
         timestamp: new Date(),
         error: true,
       },
@@ -1006,7 +1008,7 @@ export function AppContainer({ config }: AppContainerProps) {
           setInputValue("");
           setCursorPosition(0);
         } else {
-          console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
+          console.log(`\n\n  \x1b[36m${t("app.toResumeSession")}\x1b[0m`);
           console.log(
             `  \x1b[1mopenshell --session ${activeSessionId}\x1b[0m\n`,
           );
@@ -1179,7 +1181,12 @@ export function AppContainer({ config }: AppContainerProps) {
                   ...prev,
                   {
                     role: Role.ASSISTANT,
-                    content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    content: t("app.autoExecuteError", {
+                      error:
+                        error instanceof Error
+                          ? error.message
+                          : "Unknown error",
+                    }),
                     timestamp: new Date(),
                     error: true,
                   },
@@ -1421,7 +1428,9 @@ export function AppContainer({ config }: AppContainerProps) {
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
         <Text color="yellow" bold>
-          Review Required ({pendingInterruptMessages.length} actions):
+          {t("app.reviewRequired", {
+            count: String(pendingInterruptMessages.length),
+          })}
         </Text>
         {pendingInterruptMessages.map((tc, index) => {
           if (!tc.interrupt) return null;
@@ -1447,7 +1456,7 @@ export function AppContainer({ config }: AppContainerProps) {
               </Text>
               <Text color="yellow" dimColor wrap="wrap">
                 {tc.interrupt.value?.action_requests?.[0]?.description ||
-                  "Action requires approval"}
+                  t("app.actionRequiresApproval")}
               </Text>
               <Box marginTop={1}>
                 <SelectInput

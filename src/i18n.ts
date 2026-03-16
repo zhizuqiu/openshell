@@ -31,6 +31,15 @@ interface Translations {
     tipReset: string;
     recentActivity: string;
     footerShortcuts: string;
+    loadingSession: string;
+    switchedToSession: string;
+    toResumeSession: string;
+    failedToListSessions: string;
+    agentNotReadyError: string;
+    systemError: string;
+    reviewRequired: string;
+    autoExecuteError: string;
+    actionRequiresApproval: string;
   };
   help: {
     availableCommands: string;
@@ -117,6 +126,15 @@ const translations: Record<Language, Translations> = {
       tipReset: "双击 Esc 重置输入框",
       recentActivity: "最近活动",
       footerShortcuts: "? 查看快捷键",
+      loadingSession: "正在加载会话：{{sessionId}}...",
+      switchedToSession: "已切换到会话：{{sessionId}}",
+      toResumeSession: "如需恢复此会话，请运行：",
+      failedToListSessions: "获取会话列表失败：{{error}}",
+      agentNotReadyError: "错误：Agent 未就绪",
+      systemError: "系统错误：{{error}}",
+      reviewRequired: "需要审批（{{count}} 个操作）：",
+      autoExecuteError: "错误：{{error}}",
+      actionRequiresApproval: "操作需要审批",
     },
     help: {
       availableCommands: "可用命令：",
@@ -210,6 +228,15 @@ const translations: Record<Language, Translations> = {
       tipReset: "Press Esc twice to reset input",
       recentActivity: "Recent activity",
       footerShortcuts: "? for shortcuts",
+      loadingSession: "Loading session: {{sessionId}}...",
+      switchedToSession: "Switched to session: {{sessionId}}",
+      toResumeSession: "To resume this session, run:",
+      failedToListSessions: "Failed to list sessions: {{error}}",
+      agentNotReadyError: "Error: Agent not ready",
+      systemError: "System Error: {{error}}",
+      reviewRequired: "Review Required ({{count}} actions):",
+      autoExecuteError: "Error: {{error}}",
+      actionRequiresApproval: "Action requires approval",
     },
     help: {
       availableCommands: "Available commands:",
@@ -306,7 +333,7 @@ class I18n {
     return this.currentLanguage;
   }
 
-  t(key: string): string {
+  t(key: string, params?: Record<string, string>): string {
     const keys = key.split(".");
     let value: unknown = translations[this.currentLanguage];
 
@@ -318,7 +345,16 @@ class I18n {
       }
     }
 
-    return typeof value === "string" ? value : key;
+    let result = typeof value === "string" ? value : key;
+
+    // Replace parameters
+    if (params) {
+      Object.entries(params).forEach(([paramKey, paramValue]) => {
+        result = result.replace(`{{${paramKey}}}`, paramValue);
+      });
+    }
+
+    return result;
   }
 
   // Get array translations
@@ -349,5 +385,6 @@ export const getI18n = (): I18n => {
 };
 
 // Helper functions for quick translation
-export const t = (key: string) => getI18n().t(key);
+export const t = (key: string, params?: Record<string, string>) =>
+  getI18n().t(key, params);
 export const tArray = (key: string) => getI18n().tArray(key);
