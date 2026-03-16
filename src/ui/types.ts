@@ -78,8 +78,11 @@ interface ReviewConfig {
 }
 
 interface InterruptValue {
-  action_requests: ActionRequest[];
-  review_configs: ReviewConfig[];
+  // LangChain JS uses camelCase, Python uses snake_case
+  action_requests?: ActionRequest[];
+  actionRequests?: ActionRequest[];
+  review_configs?: ReviewConfig[];
+  reviewConfigs?: ReviewConfig[];
 }
 
 export interface Interrupt {

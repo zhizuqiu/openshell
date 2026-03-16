@@ -814,8 +814,11 @@ export function AppContainer({ config }: AppContainerProps) {
         const tc = block?.tool_calls?.find((t) => t.interrupt);
         if (tc && tc.interrupt) {
           // 为所有 action_requests 生成批准决策
-          const actionRequestsCount =
-            tc.interrupt.value?.action_requests?.length || 0;
+          const actionRequests =
+            tc.interrupt.value?.actionRequests ||
+            tc.interrupt.value?.action_requests ||
+            [];
+          const actionRequestsCount = actionRequests.length;
           await handleDecision(
             "approve",
             tc.id || "",
@@ -924,8 +927,11 @@ export function AppContainer({ config }: AppContainerProps) {
           hasInterrupt = true;
           if (autoExecute) {
             // autoExecute 模式：为所有 action_requests 生成批准决策
-            const actionRequestsCount =
-              interrupt.value?.action_requests?.length || 0;
+            const actionRequests =
+              interrupt.value?.actionRequests ||
+              interrupt.value?.action_requests ||
+              [];
+            const actionRequestsCount = actionRequests.length;
             handleDecision(
               "approve",
               lastToolCallId || "",
@@ -1127,10 +1133,14 @@ export function AppContainer({ config }: AppContainerProps) {
       });
 
       // 构建决策数组
-      // 根据 LangChain 文档，decisions 数组长度必须与 action_requests 长度匹配
+      // 根据 LangChain 文档，decisions 数组长度必须与 action_requests/actionRequests 长度匹配
       let decisions: { type: string; message?: string }[] = [];
 
-      const actionRequests = interrupt.value?.action_requests || [];
+      // LangChain JS 使用 actionRequests (camelCase), Python 使用 action_requests (snake_case)
+      const actionRequests =
+        interrupt.value?.actionRequests ||
+        interrupt.value?.action_requests ||
+        [];
       const interruptActionCount = actionRequests.length;
 
       // 使用传入的 actionRequestsCount 或从 interrupt 获取
@@ -1673,7 +1683,12 @@ export function AppContainer({ config }: AppContainerProps) {
                   .join(", ")}
               </Text>
               <Text color="yellow" dimColor wrap="wrap">
-                {tc.interrupt.value?.action_requests?.[0]?.description ||
+                {tc.interrupt.value?.actionRequests?.[0]?.description ||
+                  tc.interrupt.value?.action_requests?.[0]?.description ||
+                  tc.interrupt.value?.reviewConfigs?.[0]
+                    ?.allowed_decisions?.[0] ||
+                  tc.interrupt.value?.review_configs?.[0]
+                    ?.allowed_decisions?.[0] ||
                   t("app.actionRequiresApproval")}
               </Text>
               <Box marginTop={1}>

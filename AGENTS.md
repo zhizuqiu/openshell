@@ -201,6 +201,7 @@ git tag vX.X.X
 1. **No Commits Without Permission**: Do NOT commit code changes unless the user explicitly asks you to commit
 2. **Internationalize User-Facing Text**: All prompt messages, hints, and instructional text must use the i18n system (`t()` function) - never hardcode strings
 3. **No npm Publish Without Permission**: Do NOT run `npm publish` or push to npm registry unless the user explicitly asks you to publish
+4. **Query LangChain Documentation First**: Before writing LangChain/LangGraph related code, always search the LangChain documentation using the `docs-langchain_search_docs_by_lang_chain` tool to verify API usage, data structures, and best practices
 
 ## ⚠️ Common Issues
 
