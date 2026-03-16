@@ -208,7 +208,14 @@ export function AppContainer({ config }: AppContainerProps) {
 
         seenMessageIdsRef.current.clear();
         if (restoredMessages.length > 0) {
-          setMessages(restoredMessages);
+          setMessages([
+            ...restoredMessages,
+            {
+              role: Role.SYSTEM,
+              content: `Switched to session: ${threadId}`,
+              timestamp: new Date(),
+            },
+          ]);
           langChainMessages.forEach((m) => {
             const msgId = m.id || m.kwargs?.id;
             if (msgId) seenMessageIdsRef.current.add(msgId);
