@@ -239,9 +239,13 @@ export function AppContainer({ config }: AppContainerProps) {
                   id: tcId,
                   name: tc.name || "unknown",
                   args: tc.args || {},
-                  result: toolResult?.result || tc.result,
+                  // 优先使用 ToolMessage 的结果，如果没有则使用 tc.result
+                  result:
+                    toolResult !== undefined ? toolResult.result : tc.result,
                   status:
-                    toolResult?.status || tc.status || ToolCallStatus.SUCCESS,
+                    toolResult !== undefined
+                      ? toolResult.status
+                      : tc.status || ToolCallStatus.SUCCESS,
                 };
               });
               assistantContent.push({
