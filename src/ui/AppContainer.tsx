@@ -813,7 +813,16 @@ export function AppContainer({ config }: AppContainerProps) {
         );
         const tc = block?.tool_calls?.find((t) => t.interrupt);
         if (tc && tc.interrupt) {
-          await handleDecision("approve", tc.id || "", tc.interrupt);
+          // 为所有 action_requests 生成批准决策
+          const allToolIds = tc.interrupt.value?.action_requests?.map(
+            () => tc.id || "",
+          );
+          await handleDecision(
+            "approve",
+            tc.id || "",
+            tc.interrupt,
+            allToolIds,
+          );
           return;
         }
       }
@@ -915,7 +924,16 @@ export function AppContainer({ config }: AppContainerProps) {
         if (interrupt && !hasInterrupt) {
           hasInterrupt = true;
           if (autoExecute) {
-            handleDecision("approve", lastToolCallId || "", interrupt);
+            // autoExecute 模式：为所有 action_requests 生成批准决策
+            const allToolIds = interrupt.value?.action_requests?.map(
+              () => lastToolCallId || "",
+            );
+            handleDecision(
+              "approve",
+              lastToolCallId || "",
+              interrupt,
+              allToolIds,
+            );
             return;
           }
           setMessages((prev) => {
