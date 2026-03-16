@@ -145,6 +145,13 @@ try {
 - No prop-types (TypeScript)
 - Standard React hooks
 
+### Ink Static Component Limitations
+
+- `<Static>` accumulates output and does not clear previous content when `items` changes
+- Changing the `key` prop alone does not clear the terminal buffer
+- For session switching or history replacement, add system messages as markers instead of attempting to clear/replace
+- If screen refresh is needed, use `useStdout()` and write ANSI escape codes: `\x1b[2J\x1b[H`
+
 ---
 
 ## 🏗️ Project Structure
@@ -188,6 +195,11 @@ npm publish --access public
 git add package.json && git commit -m "chore: bump version to X.X.X"
 git tag vX.X.X
 ```
+
+## ⚠️ Development Rules
+
+1. **No Commits Without Permission**: Do NOT commit code changes unless the user explicitly asks you to commit
+2. **Internationalize User-Facing Text**: All prompt messages, hints, and instructional text must use the i18n system (`t()` function) - never hardcode strings
 
 ## ⚠️ Common Issues
 
