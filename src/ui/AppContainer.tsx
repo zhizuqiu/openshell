@@ -174,8 +174,29 @@ export function AppContainer({ config }: AppContainerProps) {
             const toolCallId = m.tool_call_id || kwargs.tool_call_id;
             const resultContent = m.content ?? kwargs.content ?? "";
 
+            // 解析工具结果，提取 output 字段
+            let resultStr = String(resultContent);
             let status = ToolCallStatus.SUCCESS;
-            const resultStr = String(resultContent);
+
+            try {
+              // 工具结果通常是 JSON 格式：{"status":"success","output":"..."}
+              const parsed = JSON.parse(resultContent);
+              if (parsed && typeof parsed === "object") {
+                // 如果有 output 字段，使用它作为结果
+                if (typeof parsed.output === "string") {
+                  resultStr = parsed.output;
+                } else if (typeof parsed.result === "string") {
+                  resultStr = parsed.result;
+                }
+                // 根据 status 字段设置状态
+                if (parsed.status === "error" || parsed.status === "failed") {
+                  status = ToolCallStatus.ERROR;
+                }
+              }
+            } catch {
+              // 不是 JSON 格式，使用原始内容
+            }
+
             if (resultStr.includes("Error") || resultStr.includes("failed")) {
               status = ToolCallStatus.ERROR;
             }
