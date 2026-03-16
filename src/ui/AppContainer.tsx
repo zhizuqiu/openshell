@@ -24,6 +24,7 @@ import type {
   Message,
   AssistantMessage,
   Interrupt,
+  ToolCall,
 } from "./types.js";
 import {
   CustomMultiMessageRole as Role,
@@ -172,24 +173,56 @@ export function AppContainer({ config }: AppContainerProps) {
             let content: any = m.content ?? kwargs.content;
 
             if (role === Role.ASSISTANT) {
-              if (
-                typeof content === "string" &&
-                content.trim().startsWith("[")
-              ) {
-                try {
-                  const parsed = JSON.parse(content);
-                  if (Array.isArray(parsed)) content = parsed;
-                  else content = [{ type: MsgType.TEXT, content }];
-                } catch {
-                  content = [{ type: MsgType.TEXT, content }];
-                }
-              } else if (typeof content === "string") {
-                content = [{ type: MsgType.TEXT, content }];
-              } else if (!Array.isArray(content)) {
-                content = [
-                  { type: MsgType.TEXT, content: String(content || "") },
-                ];
+              const assistantContent: AssistantMessage[] = [];
+
+              // 1. 先检查是否有 tool_calls（优先处理工具调用）
+              const toolCalls =
+                m.tool_calls || kwargs.tool_calls || m.kwargs?.tool_calls || [];
+
+              if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+                const formattedToolCalls: ToolCall[] = toolCalls.map((tc) => ({
+                  id: tc.id || "",
+                  name: tc.name || "unknown",
+                  args: tc.args || {},
+                  result: tc.result,
+                  status: tc.status || ToolCallStatus.SUCCESS,
+                }));
+                assistantContent.push({
+                  type: MsgType.TOOL_CALL,
+                  tool_calls: formattedToolCalls,
+                });
               }
+
+              // 2. 处理文本内容
+              if (typeof content === "string" && content.trim()) {
+                if (content.trim().startsWith("[")) {
+                  try {
+                    const parsed = JSON.parse(content);
+                    if (Array.isArray(parsed)) {
+                      // 已经是 AssistantMessage[] 格式
+                      assistantContent.push(...parsed);
+                    } else {
+                      assistantContent.push({ type: MsgType.TEXT, content });
+                    }
+                  } catch {
+                    assistantContent.push({ type: MsgType.TEXT, content });
+                  }
+                } else {
+                  assistantContent.push({ type: MsgType.TEXT, content });
+                }
+              } else if (content && !Array.isArray(content)) {
+                assistantContent.push({
+                  type: MsgType.TEXT,
+                  content: String(content || ""),
+                });
+              }
+
+              // 如果没有内容，至少放一个空的 TEXT 块
+              if (assistantContent.length === 0) {
+                assistantContent.push({ type: MsgType.TEXT, content: "" });
+              }
+
+              content = assistantContent;
             }
 
             const timestamp =
@@ -1543,10 +1576,7 @@ export function AppContainer({ config }: AppContainerProps) {
         </Box>
       ) : (
         <>
-          <Static
-            items={stableMessages}
-            key={`static-history-${activeSessionId}`}
-          >
+          <Static items={stableMessages} key="chat-history">
             {(msg, index) => (
               <MessageComponent
                 key={`stable-${msg.timestamp.getTime()}-${index}`}
