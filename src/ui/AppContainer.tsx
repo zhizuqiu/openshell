@@ -140,163 +140,189 @@ export function AppContainer({ config }: AppContainerProps) {
       if (state && state.values && Array.isArray(state.values.messages)) {
         const langChainMessages = state.values.messages as any[];
 
-        // Debug: 打印第一条 AI 消息的结构
-        const debugAiMsg = langChainMessages.find(
-          (m) =>
-            m.type === "ai" ||
-            m.kwargs?.type === "ai" ||
-            m.id?.[2]?.includes("AI"),
-        );
-        if (debugAiMsg && process.env["OPENSHHELL_DEBUG"] === "true") {
-          console.log("=== DEBUG AI Message Structure ===");
-          console.log("msg.type:", debugAiMsg.type);
-          console.log("msg.kwargs?.tool_calls:", debugAiMsg.kwargs?.tool_calls);
-          console.log(
-            "msg.kwargs?.kwargs?.tool_calls:",
-            debugAiMsg.kwargs?.kwargs?.tool_calls,
-          );
-          console.log("msg.tool_calls:", debugAiMsg.tool_calls);
-          console.log(
-            "msg.content (first 200):",
-            debugAiMsg.content?.substring(0, 200),
-          );
-          console.log(
-            "msg.kwargs.content (first 200):",
-            debugAiMsg.kwargs?.content?.substring(0, 200),
-          );
+        // 两步处理：
+        // 1. 先遍历所有消息，收集 AI 消息和 ToolMessage
+        // 2. 将 ToolMessage 的 result 关联到对应的 AI 消息的 tool_call 上
+
+        interface ProcessedMessage {
+          role: Role;
+          content: any;
+          timestamp: Date;
         }
 
-        const restoredMessages: Message[] = langChainMessages
-          .map((m) => {
-            const kwargs = m.kwargs || m;
-            const type =
-              m.type ||
-              kwargs.type ||
-              (typeof m._getType === "function"
-                ? m._getType()
-                : kwargs._getType?.());
-            let role: Role = Role.ASSISTANT;
-            if (
-              type === "human" ||
-              type === "user" ||
-              (m.id && Array.isArray(m.id) && m.id[2] === "HumanMessage")
-            ) {
-              role = Role.USER;
-            } else if (
-              type === "system" ||
-              (m.id && Array.isArray(m.id) && m.id[2] === "SystemMessage")
-            ) {
-              role = Role.SYSTEM;
-            } else if (
-              type === "ai" ||
-              (m.id &&
-                Array.isArray(m.id) &&
-                (m.id[2] === "AIMessage" || m.id[2] === "AIMessageChunk"))
-            ) {
-              role = Role.ASSISTANT;
+        const toolResults = new Map<
+          string,
+          { result: string; status: ToolCallStatus }
+        >();
+
+        // 第一步：识别所有消息
+        const processedMessages: ProcessedMessage[] = [];
+
+        for (const m of langChainMessages) {
+          const kwargs = m.kwargs || m;
+          const type =
+            m.type ||
+            kwargs.type ||
+            (typeof m._getType === "function"
+              ? m._getType()
+              : kwargs._getType?.());
+
+          // 检查是否是 ToolMessage
+          const isTool =
+            type === "tool" ||
+            m.id?.[2] === "ToolMessage" ||
+            kwargs.id?.[2] === "ToolMessage";
+
+          if (isTool) {
+            // ToolMessage: 存储结果，用于后续关联
+            const toolCallId = m.tool_call_id || kwargs.tool_call_id;
+            const resultContent = m.content ?? kwargs.content ?? "";
+
+            // 判断状态
+            let status = ToolCallStatus.SUCCESS;
+            const resultStr = String(resultContent);
+            if (resultStr.includes("Error") || resultStr.includes("failed")) {
+              status = ToolCallStatus.ERROR;
             }
 
-            let content: any = m.content ?? kwargs.content;
+            if (toolCallId) {
+              toolResults.set(toolCallId, { result: resultStr, status });
+            }
+            // ToolMessage 本身不添加到 UI 消息列表
+            continue;
+          }
 
-            if (role === Role.ASSISTANT) {
-              const assistantContent: AssistantMessage[] = [];
+          let role: Role = Role.ASSISTANT;
+          if (
+            type === "human" ||
+            type === "user" ||
+            (m.id && Array.isArray(m.id) && m.id[2] === "HumanMessage")
+          ) {
+            role = Role.USER;
+          } else if (
+            type === "system" ||
+            (m.id && Array.isArray(m.id) && m.id[2] === "SystemMessage")
+          ) {
+            role = Role.SYSTEM;
+          } else if (
+            type === "ai" ||
+            (m.id &&
+              Array.isArray(m.id) &&
+              (m.id[2] === "AIMessage" || m.id[2] === "AIMessageChunk"))
+          ) {
+            role = Role.ASSISTANT;
+          }
 
-              // 1. 先检查是否有 tool_calls（优先处理工具调用）
-              // 检查多个可能的位置：m.tool_calls, kwargs.tool_calls, m.kwargs.tool_calls, m.kwargs.kwargs.tool_calls
-              const toolCalls =
-                m.tool_calls ||
-                kwargs.tool_calls ||
-                m.kwargs?.tool_calls ||
-                m.kwargs?.kwargs?.tool_calls ||
-                [];
+          let content: any = m.content ?? kwargs.content;
+          const timestamp =
+            m.additional_kwargs?.timestamp ||
+            kwargs.additional_kwargs?.timestamp ||
+            Date.now();
 
-              if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-                const formattedToolCalls: ToolCall[] = toolCalls.map((tc) => ({
-                  id: tc.id || "",
+          if (role === Role.ASSISTANT) {
+            const assistantContent: AssistantMessage[] = [];
+
+            // 1. 先检查是否有 tool_calls（优先处理工具调用）
+            const toolCalls =
+              m.tool_calls ||
+              kwargs.tool_calls ||
+              m.kwargs?.tool_calls ||
+              m.kwargs?.kwargs?.tool_calls ||
+              [];
+
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+              const formattedToolCalls: ToolCall[] = toolCalls.map((tc) => {
+                const tcId = tc.id || "";
+                // 检查是否有对应的 ToolMessage 结果
+                const toolResult = toolResults.get(tcId);
+                return {
+                  id: tcId,
                   name: tc.name || "unknown",
                   args: tc.args || {},
-                  result: tc.result,
-                  status: tc.status || ToolCallStatus.SUCCESS,
-                }));
-                assistantContent.push({
-                  type: MsgType.TOOL_CALL,
-                  tool_calls: formattedToolCalls,
-                });
-              }
-
-              // 2. 处理文本内容
-              if (typeof content === "string" && content.trim()) {
-                // 检查 content 是否是序列化的 AssistantMessage[] 数组
-                if (content.trim().startsWith("[")) {
-                  try {
-                    const parsed = JSON.parse(content);
-                    if (Array.isArray(parsed)) {
-                      // 检查是否是 AssistantMessage[] 格式（有 type 字段）
-                      if (parsed.length > 0 && parsed[0]?.type) {
-                        assistantContent.push(...parsed);
-                      } else {
-                        // 可能是旧格式的工具调用数组，转换为 TOOL_CALL 格式
-                        const hasToolCalls = parsed.some(
-                          (item) => item.name || item.function || item.id,
-                        );
-                        if (hasToolCalls) {
-                          const formattedOldFormat: ToolCall[] = parsed.map(
-                            (tc) => ({
-                              id: tc.id || tc.function?.id || "",
-                              name: tc.name || tc.function?.name || "unknown",
-                              args: tc.args || tc.function?.arguments || {},
-                              result: tc.result,
-                              status: tc.status || ToolCallStatus.SUCCESS,
-                            }),
-                          );
-                          assistantContent.push({
-                            type: MsgType.TOOL_CALL,
-                            tool_calls: formattedOldFormat,
-                          });
-                        } else {
-                          assistantContent.push({
-                            type: MsgType.TEXT,
-                            content,
-                          });
-                        }
-                      }
-                    } else {
-                      assistantContent.push({ type: MsgType.TEXT, content });
-                    }
-                  } catch {
-                    assistantContent.push({ type: MsgType.TEXT, content });
-                  }
-                } else {
-                  assistantContent.push({ type: MsgType.TEXT, content });
-                }
-              } else if (content && !Array.isArray(content)) {
-                assistantContent.push({
-                  type: MsgType.TEXT,
-                  content: String(content || ""),
-                });
-              }
-
-              // 如果没有内容，至少放一个空的 TEXT 块
-              if (assistantContent.length === 0) {
-                assistantContent.push({ type: MsgType.TEXT, content: "" });
-              }
-
-              content = assistantContent;
+                  result: toolResult?.result || tc.result,
+                  status:
+                    toolResult?.status || tc.status || ToolCallStatus.SUCCESS,
+                };
+              });
+              assistantContent.push({
+                type: MsgType.TOOL_CALL,
+                tool_calls: formattedToolCalls,
+              });
             }
 
-            const timestamp =
-              m.additional_kwargs?.timestamp ||
-              kwargs.additional_kwargs?.timestamp ||
-              Date.now();
+            // 2. 处理文本内容
+            if (typeof content === "string" && content.trim()) {
+              if (content.trim().startsWith("[")) {
+                try {
+                  const parsed = JSON.parse(content);
+                  if (Array.isArray(parsed)) {
+                    if (parsed.length > 0 && parsed[0]?.type) {
+                      assistantContent.push(...parsed);
+                    } else {
+                      const hasToolCalls = parsed.some(
+                        (item) => item.name || item.function || item.id,
+                      );
+                      if (hasToolCalls) {
+                        const formattedOldFormat: ToolCall[] = parsed.map(
+                          (tc) => ({
+                            id: tc.id || tc.function?.id || "",
+                            name: tc.name || tc.function?.name || "unknown",
+                            args: tc.args || tc.function?.arguments || {},
+                            result: tc.result,
+                            status: tc.status || ToolCallStatus.SUCCESS,
+                          }),
+                        );
+                        assistantContent.push({
+                          type: MsgType.TOOL_CALL,
+                          tool_calls: formattedOldFormat,
+                        });
+                      } else {
+                        assistantContent.push({ type: MsgType.TEXT, content });
+                      }
+                    }
+                  } else {
+                    assistantContent.push({ type: MsgType.TEXT, content });
+                  }
+                } catch {
+                  assistantContent.push({ type: MsgType.TEXT, content });
+                }
+              } else {
+                assistantContent.push({ type: MsgType.TEXT, content });
+              }
+            } else if (content && !Array.isArray(content)) {
+              assistantContent.push({
+                type: MsgType.TEXT,
+                content: String(content || ""),
+              });
+            }
 
-            return { role, content, timestamp: new Date(timestamp) };
-          })
+            if (assistantContent.length === 0) {
+              assistantContent.push({ type: MsgType.TEXT, content: "" });
+            }
+
+            content = assistantContent;
+          }
+
+          processedMessages.push({
+            role,
+            content,
+            timestamp: new Date(timestamp),
+          });
+        }
+
+        // 过滤掉空消息
+        const restoredMessages: Message[] = processedMessages
           .filter(
             (m) =>
               m.content &&
               (typeof m.content === "string" ||
                 (Array.isArray(m.content) && m.content.length > 0)),
-          );
+          )
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+          }));
 
         seenMessageIdsRef.current.clear();
         if (restoredMessages.length > 0) {

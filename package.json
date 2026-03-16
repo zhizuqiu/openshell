@@ -1,6 +1,6 @@
 {
   "name": "@zhizuqiu/openshell",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "OpenShell CLI - Natural Language Command-Line Assistant",
   "license": "MIT",
   "type": "module",
