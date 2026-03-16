@@ -816,18 +816,11 @@ export function AppContainer({ config }: AppContainerProps) {
           // 为所有 action_requests 生成批准决策
           const actionRequestsCount =
             tc.interrupt.value?.action_requests?.length || 0;
-          // 统计当前消息中所有带 interrupt 的 tool_calls 数量
-          const interruptCount = (pendingMsg.content as AssistantMessage[])
-            .filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls)
-            .flatMap((b) => b.tool_calls || [])
-            .filter((t) => t.interrupt).length;
-          const count = Math.max(actionRequestsCount, interruptCount, 1);
-          const allToolIds = Array(count).fill(tc.id || "");
           await handleDecision(
             "approve",
             tc.id || "",
             tc.interrupt,
-            allToolIds,
+            actionRequestsCount,
           );
           return;
         }
@@ -931,17 +924,13 @@ export function AppContainer({ config }: AppContainerProps) {
           hasInterrupt = true;
           if (autoExecute) {
             // autoExecute 模式：为所有 action_requests 生成批准决策
-            // 优先从 action_requests 获取数量，否则从 pendingInterruptMessages 获取
             const actionRequestsCount =
               interrupt.value?.action_requests?.length || 0;
-            const pendingCount = pendingInterruptMessages.length;
-            const count = Math.max(actionRequestsCount, pendingCount, 1);
-            const allToolIds = Array(count).fill(lastToolCallId || "");
             handleDecision(
               "approve",
               lastToolCallId || "",
               interrupt,
-              allToolIds,
+              actionRequestsCount,
             );
             return;
           }
@@ -1107,7 +1096,7 @@ export function AppContainer({ config }: AppContainerProps) {
     decision: "approve" | "reject",
     toolId: string,
     interrupt?: Interrupt,
-    allToolIds?: string[], // 新增：支持批量确认时传入所有工具 ID
+    actionRequestsCount?: number, // action_requests 的数量，用于构建 decisions 数组
   ) => {
     if (!agent || !interrupt) return;
     activeStreamsRef.current++;
@@ -1138,20 +1127,17 @@ export function AppContainer({ config }: AppContainerProps) {
       });
 
       // 构建决策数组
-      let decisions: { type: string }[] = [];
+      // 根据 LangChain 文档，decisions 数组长度必须与 action_requests 长度匹配
+      let decisions: { type: string; message?: string }[] = [];
 
-      // 优先使用 allToolIds 来决定决策数量（批量确认模式）
-      if (allToolIds && allToolIds.length > 0) {
-        decisions = allToolIds.map(() => ({ type: decision }));
-      } else if (interrupt?.value?.action_requests) {
-        // 从 action_requests 获取数量
-        decisions = interrupt.value.action_requests.map(() => ({
-          type: decision,
-        }));
-      } else {
-        // 回退：单个决策
-        decisions = [{ type: decision }];
-      }
+      const actionRequests = interrupt.value?.action_requests || [];
+      const interruptActionCount = actionRequests.length;
+
+      // 使用传入的 actionRequestsCount 或从 interrupt 获取
+      const count = Math.max(interruptActionCount, actionRequestsCount || 0, 1);
+
+      // 为每个 action_request 生成一个决策
+      decisions = Array(count).fill({ type: decision });
 
       const stream = await agent.stream(
         new Command({ resume: { [interrupt.id]: { decisions } } }) as any,
@@ -1651,10 +1637,12 @@ export function AppContainer({ config }: AppContainerProps) {
                 onSelect={(item) => {
                   const decision =
                     item.value === "approve-all" ? "approve" : "reject";
-                  const allIds = pendingInterruptMessages.map(
-                    (tc) => tc.id || "",
+                  handleDecision(
+                    decision,
+                    "",
+                    firstInterrupt,
+                    pendingInterruptMessages.length,
                   );
-                  handleDecision(decision, "", firstInterrupt, allIds);
                 }}
               />
             </Box>
