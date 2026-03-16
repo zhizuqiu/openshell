@@ -155,7 +155,38 @@ export function AppContainer({ config }: AppContainerProps) {
           { result: string; status: ToolCallStatus }
         >();
 
-        // 第一步：识别所有消息
+        // 第一步：先遍历所有消息，收集 ToolMessage 的结果
+        for (const m of langChainMessages) {
+          const kwargs = m.kwargs || m;
+          const type =
+            m.type ||
+            kwargs.type ||
+            (typeof m._getType === "function"
+              ? m._getType()
+              : kwargs._getType?.());
+
+          const isTool =
+            type === "tool" ||
+            m.id?.[2] === "ToolMessage" ||
+            kwargs.id?.[2] === "ToolMessage";
+
+          if (isTool) {
+            const toolCallId = m.tool_call_id || kwargs.tool_call_id;
+            const resultContent = m.content ?? kwargs.content ?? "";
+
+            let status = ToolCallStatus.SUCCESS;
+            const resultStr = String(resultContent);
+            if (resultStr.includes("Error") || resultStr.includes("failed")) {
+              status = ToolCallStatus.ERROR;
+            }
+
+            if (toolCallId) {
+              toolResults.set(toolCallId, { result: resultStr, status });
+            }
+          }
+        }
+
+        // 第二步：处理所有消息，构建 UI 消息
         const processedMessages: ProcessedMessage[] = [];
 
         for (const m of langChainMessages) {
@@ -167,30 +198,13 @@ export function AppContainer({ config }: AppContainerProps) {
               ? m._getType()
               : kwargs._getType?.());
 
-          // 检查是否是 ToolMessage
           const isTool =
             type === "tool" ||
             m.id?.[2] === "ToolMessage" ||
             kwargs.id?.[2] === "ToolMessage";
 
-          if (isTool) {
-            // ToolMessage: 存储结果，用于后续关联
-            const toolCallId = m.tool_call_id || kwargs.tool_call_id;
-            const resultContent = m.content ?? kwargs.content ?? "";
-
-            // 判断状态
-            let status = ToolCallStatus.SUCCESS;
-            const resultStr = String(resultContent);
-            if (resultStr.includes("Error") || resultStr.includes("failed")) {
-              status = ToolCallStatus.ERROR;
-            }
-
-            if (toolCallId) {
-              toolResults.set(toolCallId, { result: resultStr, status });
-            }
-            // ToolMessage 本身不添加到 UI 消息列表
-            continue;
-          }
+          // ToolMessage 不添加到 UI，跳过
+          if (isTool) continue;
 
           let role: Role = Role.ASSISTANT;
           if (
