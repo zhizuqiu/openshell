@@ -8,7 +8,11 @@ import Gradient from "ink-gradient";
 import BigText from "ink-big-text";
 import { createDataListener } from "./input/key-parser.js";
 import type { Key } from "./input/key-parser.js";
-import { createShellAgent } from "../core/index.js";
+import {
+  createShellAgent,
+  listAllSessions,
+  deleteSession,
+} from "../core/index.js";
 import { killAllProcesses } from "../core/ai/tools.js";
 import { getCommandManager } from "../core/session/command-manager.js";
 import { questionManager, type QuestionRequest } from "../core/question.js";
@@ -31,7 +35,6 @@ import type { ReactAgent } from "langchain";
 import { BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 
 export function AppContainer({ config }: AppContainerProps) {
-
   // --- 布局常量 ---
   const mainWidth = "100%";
   const innerWidth = "100%";
@@ -42,9 +45,26 @@ export function AppContainer({ config }: AppContainerProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [agent, setAgent] = useState<ReactAgent | null>(null);
   const [mode, setMode] = useState<"agent" | "shell">("agent");
-  const [activeQuestionRequest, setActiveQuestionRequest] = useState<QuestionRequest | null>(null);
+  const [activeQuestionRequest, setActiveQuestionRequest] =
+    useState<QuestionRequest | null>(null);
   const [currentDir] = useState(process.cwd());
-  const [modelName, setModelName] = useState(process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo");
+  const [modelName, setModelName] = useState(
+    process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo",
+  );
+
+  // Session 管理相关状态
+  const [activeSessionId, setActiveSessionId] = useState(
+    config.sessionId || "main-session",
+  );
+  const [sessionList, setSessionList] = useState<
+    { label: string; value: string }[]
+  >([]);
+  const [isSelectingSession, setIsSelectingSession] = useState(false);
+  const [sessionSelectorIndex, setSessionSelectorIndex] = useState(0);
+  const activeSessionIdRef = useRef(activeSessionId);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   const isPastingRef = useRef(false); // 是否处于粘贴过程中
   const lastPasteEndRef = useRef(0); // 上次粘贴结束的时间戳
@@ -58,11 +78,21 @@ export function AppContainer({ config }: AppContainerProps) {
   const cursorRef = useRef(cursorPosition);
   const modeRef = useRef(mode);
 
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-  useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
-  useEffect(() => { inputValueRef.current = inputValue; }, [inputValue]);
-  useEffect(() => { cursorRef.current = cursorPosition; }, [cursorPosition]);
-  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
+  useEffect(() => {
+    inputValueRef.current = inputValue;
+  }, [inputValue]);
+  useEffect(() => {
+    cursorRef.current = cursorPosition;
+  }, [cursorPosition]);
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   // 开启 Bracketed Paste Mode
   useEffect(() => {
@@ -89,11 +119,131 @@ export function AppContainer({ config }: AppContainerProps) {
     const first = segments[0];
     const last = segments[segments.length - 1];
     const isTilde = p.startsWith("~");
-    
+
     const start = isTilde ? "~" : `${path.sep}${first}`;
     const result = `${start}${path.sep}...${path.sep}${last}`;
-    
+
     return result.length > maxLen ? last : result;
+  };
+
+  const loadSessionHistory = async (
+    agentInstance: ReactAgent,
+    threadId: string,
+  ) => {
+    setIsLoading(true);
+    try {
+      const state = await agentInstance.graph.getState({
+        configurable: { thread_id: threadId },
+      });
+
+      if (state && state.values && Array.isArray(state.values.messages)) {
+        const langChainMessages = state.values.messages as any[];
+
+        const restoredMessages: Message[] = langChainMessages
+          .map((m) => {
+            const kwargs = m.kwargs || m;
+            const type =
+              m.type ||
+              kwargs.type ||
+              (typeof m._getType === "function"
+                ? m._getType()
+                : kwargs._getType?.());
+            let role: Role = Role.ASSISTANT;
+            if (
+              type === "human" ||
+              type === "user" ||
+              (m.id && Array.isArray(m.id) && m.id[2] === "HumanMessage")
+            ) {
+              role = Role.USER;
+            } else if (
+              type === "system" ||
+              (m.id && Array.isArray(m.id) && m.id[2] === "SystemMessage")
+            ) {
+              role = Role.SYSTEM;
+            } else if (
+              type === "ai" ||
+              (m.id &&
+                Array.isArray(m.id) &&
+                (m.id[2] === "AIMessage" || m.id[2] === "AIMessageChunk"))
+            ) {
+              role = Role.ASSISTANT;
+            }
+
+            let content: any = m.content ?? kwargs.content;
+
+            if (role === Role.ASSISTANT) {
+              if (
+                typeof content === "string" &&
+                content.trim().startsWith("[")
+              ) {
+                try {
+                  const parsed = JSON.parse(content);
+                  if (Array.isArray(parsed)) content = parsed;
+                  else content = [{ type: MsgType.TEXT, content }];
+                } catch {
+                  content = [{ type: MsgType.TEXT, content }];
+                }
+              } else if (typeof content === "string") {
+                content = [{ type: MsgType.TEXT, content }];
+              } else if (!Array.isArray(content)) {
+                content = [
+                  { type: MsgType.TEXT, content: String(content || "") },
+                ];
+              }
+            }
+
+            const timestamp =
+              m.additional_kwargs?.timestamp ||
+              kwargs.additional_kwargs?.timestamp ||
+              Date.now();
+
+            return { role, content, timestamp: new Date(timestamp) };
+          })
+          .filter(
+            (m) =>
+              m.content &&
+              (typeof m.content === "string" ||
+                (Array.isArray(m.content) && m.content.length > 0)),
+          );
+
+        seenMessageIdsRef.current.clear();
+        if (restoredMessages.length > 0) {
+          setMessages(restoredMessages);
+          langChainMessages.forEach((m) => {
+            const msgId = m.id || m.kwargs?.id;
+            if (msgId) seenMessageIdsRef.current.add(msgId);
+          });
+        } else {
+          setMessages([
+            {
+              role: Role.SYSTEM,
+              content: t("app.welcome") + ` (Session: ${threadId})`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+      } else {
+        setMessages([
+          {
+            role: Role.SYSTEM,
+            content: t("app.welcome") + ` (Session: ${threadId})`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+    } catch (e) {
+      console.error("Load History Error:", e);
+      setMessages([
+        {
+          role: Role.SYSTEM,
+          content: `Error loading session history for ${threadId}`,
+          timestamp: new Date(),
+          error: true,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const [autoExecute, setAutoExecute] = useState(true);
@@ -105,7 +255,9 @@ export function AppContainer({ config }: AppContainerProps) {
   const lastEscapeTimeRef = useRef(0);
   const cancelMessageAddedRef = useRef(false);
   const currentCommandRef = useRef<string>("");
-  const currentStreamRef = useRef<AsyncGenerator<Record<string, any>> | null>(null);
+  const currentStreamRef = useRef<AsyncGenerator<Record<string, any>> | null>(
+    null,
+  );
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const suggestionsRef = useRef<string[]>([]);
@@ -117,7 +269,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const historyIndexRef = useRef<number>(-1);
   const draftInputRef = useRef<string>("");
 
-  const ALL_COMMANDS = ["help", "version", "exit", "command"];
+  const ALL_COMMANDS = ["help", "version", "exit", "command", "session"];
 
   useEffect(() => {
     if (inputValue.startsWith("/")) {
@@ -183,8 +335,16 @@ export function AppContainer({ config }: AppContainerProps) {
 
         if (!apiKey || !baseURL) {
           setMessages([
-            { role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() },
-            { role: Role.SYSTEM, content: t("app.aiNotConfigured"), timestamp: new Date() }
+            {
+              role: Role.SYSTEM,
+              content: t("app.welcome"),
+              timestamp: new Date(),
+            },
+            {
+              role: Role.SYSTEM,
+              content: t("app.aiNotConfigured"),
+              timestamp: new Date(),
+            },
           ]);
           setIsLoading(false);
           return;
@@ -211,7 +371,7 @@ export function AppContainer({ config }: AppContainerProps) {
               else if (m._getType() === "system") role = Role.SYSTEM;
 
               let content: any = m.content;
-              
+
               // 尝试解析助手消息中的结构化数据（如果是 AssistantMessage 数组的字符串表示）
               if (role === Role.ASSISTANT && typeof content === "string") {
                 try {
@@ -226,7 +386,9 @@ export function AppContainer({ config }: AppContainerProps) {
               return {
                 role,
                 content,
-                timestamp: new Date(m.additional_kwargs?.timestamp || Date.now()),
+                timestamp: new Date(
+                  m.additional_kwargs?.timestamp || Date.now(),
+                ),
               };
             })
             .filter((m) => m.role !== "system" || m.content !== ""); // 过滤掉空的系统消息
@@ -234,12 +396,26 @@ export function AppContainer({ config }: AppContainerProps) {
           if (restoredMessages.length > 0) {
             setMessages(restoredMessages);
             // 填充 seenMessageIdsRef 防止重复
-            langChainMessages.forEach(m => { if (m.id) seenMessageIdsRef.current.add(m.id); });
+            langChainMessages.forEach((m) => {
+              if (m.id) seenMessageIdsRef.current.add(m.id);
+            });
           } else {
-            setMessages([{ role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() }]);
+            setMessages([
+              {
+                role: Role.SYSTEM,
+                content: t("app.welcome"),
+                timestamp: new Date(),
+              },
+            ]);
           }
         } else {
-          setMessages([{ role: Role.SYSTEM, content: t("app.welcome"), timestamp: new Date() }]);
+          setMessages([
+            {
+              role: Role.SYSTEM,
+              content: t("app.welcome"),
+              timestamp: new Date(),
+            },
+          ]);
         }
       } catch (error) {
         handleError(error);
@@ -266,8 +442,12 @@ export function AppContainer({ config }: AppContainerProps) {
 
     const pendingMsg = messagesRef.current.find(messageHasInterrupt);
     if (pendingMsg && agent) {
-      const block = (pendingMsg.content as AssistantMessage[]).find(b => b.type === MsgType.TOOL_CALL && b.tool_calls?.some(tc => tc.interrupt));
-      const tc = block?.tool_calls?.find(t => t.interrupt);
+      const block = (pendingMsg.content as AssistantMessage[]).find(
+        (b) =>
+          b.type === MsgType.TOOL_CALL &&
+          b.tool_calls?.some((tc) => tc.interrupt),
+      );
+      const tc = block?.tool_calls?.find((t) => t.interrupt);
       if (tc && tc.interrupt) {
         await handleDecision("reject", tc.id || "", tc.interrupt);
         return;
@@ -276,14 +456,18 @@ export function AppContainer({ config }: AppContainerProps) {
 
     setMessages((prev) => {
       const next = [...prev];
-      const aiIdx = next.findIndex(m => m.role === Role.ASSISTANT && m.streaming);
+      const aiIdx = next.findIndex(
+        (m) => m.role === Role.ASSISTANT && m.streaming,
+      );
       if (aiIdx !== -1) {
         next[aiIdx].streaming = false;
         const aiMsg = next[aiIdx];
         if (Array.isArray(aiMsg.content)) {
           for (const block of aiMsg.content) {
             if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-              for (const tc of block.tool_calls) { if (!tc.result) tc.result = "Command cancelled by user"; }
+              for (const tc of block.tool_calls) {
+                if (!tc.result) tc.result = "Command cancelled by user";
+              }
             }
           }
         }
@@ -292,42 +476,158 @@ export function AppContainer({ config }: AppContainerProps) {
     });
 
     const command = currentCommandRef.current?.trim() || "当前操作";
-    setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `任务已取消：${command}（用户按下 ESC 键中断）`, timestamp: new Date(), error: true }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: Role.ASSISTANT,
+        content: `任务已取消：${command}（用户按下 ESC 键中断）`,
+        timestamp: new Date(),
+        error: true,
+      },
+    ]);
   };
 
-  const handleCommand = async (command: string, isFromQuery: boolean = false) => {
+  const handleCommand = async (
+    command: string,
+    isFromQuery: boolean = false,
+  ) => {
     const trimmed = command.trim();
     if (!isFromQuery) {
       commandHistoryRef.current.push(trimmed);
       historyIndexRef.current = -1;
-      setMessages((prev) => [...prev, { role: Role.USER, content: trimmed, timestamp: new Date() }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: Role.USER, content: trimmed, timestamp: new Date() },
+      ]);
     }
 
-      if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith("/")) {
       const cmd = trimmed.slice(1).toLowerCase().split(" ")[0];
-      if (cmd === "clear") { setMessages([]); seenMessageIdsRef.current.clear(); return; }
-      if (cmd === "exit") { 
-        console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
-        console.log(`  \x1b[1mopenshell --session ${config.sessionId}\x1b[0m\n`);
-        exit(); 
-        setTimeout(() => process.exit(0), 100); 
-        return; 
+      if (cmd === "clear") {
+        setMessages([]);
+        seenMessageIdsRef.current.clear();
+        return;
       }
-      if (cmd === "version") { setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `OpenShell ${config.version}`, timestamp: new Date() }]); return; }
+      if (cmd === "exit") {
+        console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
+        console.log(`  \x1b[1mopenshell --session ${activeSessionId}\x1b[0m\n`);
+        exit();
+        setTimeout(() => process.exit(0), 100);
+        return;
+      }
+      if (cmd === "version") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: Role.ASSISTANT,
+            content: `OpenShell ${config.version}`,
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
       if (cmd === "help") {
-        setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `${t("help.availableCommands")}\n  /help    - ${t("help.helpCommand")}\n  /version - ${t("help.versionCommand")}\n  /clear   - ${t("help.clearCommand")}\n  /command - ${t("help.commandCommand")}\n  /exit    - ${t("help.exitCommand")}\n\n${t("help.withAiAgent")}`, timestamp: new Date() }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: Role.ASSISTANT,
+            content: `${t("help.availableCommands")}\n  /help    - ${t("help.helpCommand")}\n  /version - ${t("help.versionCommand")}\n  /clear   - ${t("help.clearCommand")}\n  /command - ${t("help.commandCommand")}\n  /exit    - ${t("help.exitCommand")}\n\n${t("help.withAiAgent")}`,
+            timestamp: new Date(),
+          },
+        ]);
         return;
       }
       if (cmd === "command") {
         const commandManager = getCommandManager();
         const commands = commandManager.listCommands();
         if (commands.length === 0) {
-          setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: "No background commands found.", timestamp: new Date() }]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: Role.ASSISTANT,
+              content: "No background commands found.",
+              timestamp: new Date(),
+            },
+          ]);
         } else {
-          const summary = commands.map(c => `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`).join("\n");
-          setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `Background Commands (${commands.length}):\n${summary}\n\n${t("command.backgroundWarning")}`, timestamp: new Date() }]);
+          const summary = commands
+            .map(
+              (c) =>
+                `- ID: ${c.id} | Status: ${c.status} | Command: ${c.command} | Duration: ${(c.duration / 1000).toFixed(1)}s`,
+            )
+            .join("\n");
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: Role.ASSISTANT,
+              content: `Background Commands (${commands.length}):\n${summary}\n\n${t("command.backgroundWarning")}`,
+              timestamp: new Date(),
+            },
+          ]);
         }
         return;
+      }
+      if (cmd === "session") {
+        const subCmd = trimmed.slice(1).trim().split(" ")[1];
+
+        if (!subCmd) {
+          // 显示 session 列表供选择
+          setIsProcessing(true);
+          listAllSessions()
+            .then((sessions) => {
+              if (sessions.length === 0) {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: Role.ASSISTANT,
+                    content: "No historical sessions found.",
+                    timestamp: new Date(),
+                  },
+                ]);
+                setIsProcessing(false);
+                return;
+              }
+              const formatted = sessions.map((s) => ({
+                label: `${s.thread_id} (Updated: ${new Date(s.updated_at).toLocaleString()})`,
+                value: s.thread_id,
+              }));
+              setSessionList(formatted);
+              setSessionSelectorIndex(0);
+              setIsSelectingSession(true);
+              setIsProcessing(false);
+            })
+            .catch((err) => {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: Role.ASSISTANT,
+                  content: `Failed to list sessions: ${err.message}`,
+                  timestamp: new Date(),
+                  error: true,
+                },
+              ]);
+              setIsProcessing(false);
+            });
+          return;
+        } else {
+          // 直接切换 session
+          setActiveSessionId(subCmd);
+          activeSessionIdRef.current = subCmd;
+          if (agent) {
+            void loadSessionHistory(agent, subCmd);
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: Role.ASSISTANT,
+                content: "Error: Agent not ready",
+                timestamp: new Date(),
+                error: true,
+              },
+            ]);
+          }
+          return;
+        }
       }
     }
 
@@ -335,13 +635,27 @@ export function AppContainer({ config }: AppContainerProps) {
       const pendingMsg = messagesRef.current.find(messageHasInterrupt);
       const resumeKeywords = ["继续", "continue", "ok", "yes", "y", ""];
       if (pendingMsg && resumeKeywords.includes(trimmed.toLowerCase())) {
-        const block = (pendingMsg.content as AssistantMessage[]).find(b => b.type === MsgType.TOOL_CALL && b.tool_calls?.some(tc => tc.interrupt));
-        const tc = block?.tool_calls?.find(t => t.interrupt);
-        if (tc && tc.interrupt) { await handleDecision("approve", tc.id || "", tc.interrupt); return; }
+        const block = (pendingMsg.content as AssistantMessage[]).find(
+          (b) =>
+            b.type === MsgType.TOOL_CALL &&
+            b.tool_calls?.some((tc) => tc.interrupt),
+        );
+        const tc = block?.tool_calls?.find((t) => t.interrupt);
+        if (tc && tc.interrupt) {
+          await handleDecision("approve", tc.id || "", tc.interrupt);
+          return;
+        }
       }
       await handleAiStream(trimmed);
     } else {
-      setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: "Agent not ready.", timestamp: new Date() }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: Role.ASSISTANT,
+          content: "Agent not ready.",
+          timestamp: new Date(),
+        },
+      ]);
       setIsProcessing(false);
     }
   };
@@ -355,17 +669,25 @@ export function AppContainer({ config }: AppContainerProps) {
     setIsProcessing(true);
     try {
       setMessages((prev) => {
-        const next = [...prev, { role: Role.ASSISTANT, content: [], timestamp: new Date(), streaming: true }];
+        const next = [
+          ...prev,
+          {
+            role: Role.ASSISTANT,
+            content: [],
+            timestamp: new Date(),
+            streaming: true,
+          },
+        ];
         currentAiMsgIndexRef.current = next.length - 1;
         return next;
       });
       if (!agent) return;
       const stream = await agent.stream(
-        { messages: [{ role: Role.USER, content: cmd }] },
-        { 
-          streamMode: "updates", 
-          configurable: { thread_id: config.sessionId || "main-session" } 
-        }
+        { messages: [{ type: "human", content: cmd }] },
+        {
+          streamMode: "updates",
+          configurable: { thread_id: activeSessionId },
+        },
       );
       currentStreamRef.current = stream;
       await processAiStream(stream, abortControllerRef.current);
@@ -374,11 +696,18 @@ export function AppContainer({ config }: AppContainerProps) {
       if (!abortControllerRef.current?.signal.aborted) handleError(error);
     } finally {
       activeStreamsRef.current--;
-      if (!abortControllerRef.current?.signal.aborted && activeStreamsRef.current <= 0) setIsProcessing(false);
+      if (
+        !abortControllerRef.current?.signal.aborted &&
+        activeStreamsRef.current <= 0
+      )
+        setIsProcessing(false);
     }
   };
 
-  const processAiStream = async (stream: AsyncIterable<Record<string, any>>, abortController: AbortController) => {
+  const processAiStream = async (
+    stream: AsyncIterable<Record<string, any>>,
+    abortController: AbortController,
+  ) => {
     let lastToolCallId: string | null = null;
     let hasInterrupt = false;
     const aiMsgIndex = currentAiMsgIndexRef.current;
@@ -392,38 +721,74 @@ export function AppContainer({ config }: AppContainerProps) {
           nodeData.messages = nodeData.messages.filter((msg: any) => {
             const rawId = msg.id || msg.kwargs?.id;
             const msgId = typeof rawId === "string" ? rawId : msg.kwargs?.id;
-            if (typeof msgId === "string" && seenMessageIdsRef.current.has(msgId)) return false;
+            if (
+              typeof msgId === "string" &&
+              seenMessageIdsRef.current.has(msgId)
+            )
+              return false;
             if (typeof msgId === "string") seenMessageIdsRef.current.add(msgId);
             return true;
           });
         }
         const firstMsg = nodeData?.messages?.[0];
-        const interrupt = chunk["__interrupt__"]?.[0] || (firstMsg instanceof AIMessage ? (firstMsg.additional_kwargs["interrupts"] as unknown as Interrupt[])?.[0] : null) || (firstMsg as any)?.interrupt;
+        const interrupt =
+          chunk["__interrupt__"]?.[0] ||
+          (firstMsg instanceof AIMessage
+            ? (
+                firstMsg.additional_kwargs[
+                  "interrupts"
+                ] as unknown as Interrupt[]
+              )?.[0]
+            : null) ||
+          (firstMsg as any)?.interrupt;
         if (interrupt && !hasInterrupt) {
           hasInterrupt = true;
-          if (autoExecute) { handleDecision("approve", lastToolCallId || "", interrupt); return; }
+          if (autoExecute) {
+            handleDecision("approve", lastToolCallId || "", interrupt);
+            return;
+          }
           setMessages((prev) => {
             const next = [...prev];
             const idx = aiMsgIndex;
             if (idx === -1) return prev;
             const aiMsg = { ...next[idx] };
-            const assistantContent = Array.isArray(aiMsg.content) ? [...aiMsg.content] : [];
+            const assistantContent = Array.isArray(aiMsg.content)
+              ? [...aiMsg.content]
+              : [];
             for (const block of assistantContent) {
               if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                const tc = block.tool_calls.find(t => !t.result && (lastToolCallId ? t.id === lastToolCallId : true));
-                if (tc) { tc.interrupt = interrupt; break; }
+                const tc = block.tool_calls.find(
+                  (t) =>
+                    !t.result &&
+                    (lastToolCallId ? t.id === lastToolCallId : true),
+                );
+                if (tc) {
+                  tc.interrupt = interrupt;
+                  break;
+                }
               }
             }
-            aiMsg.content = assistantContent; next[idx] = aiMsg; return next;
+            aiMsg.content = assistantContent;
+            next[idx] = aiMsg;
+            return next;
           });
         }
         if (!nodeData || !Array.isArray(nodeData.messages)) continue;
         for (const msg of nodeData.messages as any[]) {
-          const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+          const content =
+            typeof msg.content === "string"
+              ? msg.content
+              : JSON.stringify(msg.content);
           const toolCalls = msg.tool_calls || msg.kwargs?.tool_calls || [];
           let msgType = msg._getType?.() || msg.type || msg.kwargs?.type;
-          const isTool = msgType === "tool" || msg instanceof ToolMessage || msg.id === "ToolMessage";
-          const isAI = msgType === "ai" || msg instanceof AIMessage || msgType === "assistant";
+          const isTool =
+            msgType === "tool" ||
+            msg instanceof ToolMessage ||
+            msg.id === "ToolMessage";
+          const isAI =
+            msgType === "ai" ||
+            msg instanceof AIMessage ||
+            msgType === "assistant";
           const role = isTool ? "tool" : isAI ? "assistant" : msgType;
           if (role === "human" || role === "system") continue;
           setMessages((prev) => {
@@ -431,41 +796,61 @@ export function AppContainer({ config }: AppContainerProps) {
             const idx = aiMsgIndex;
             if (idx === -1) return prev;
             const aiMsg = { ...next[idx] };
-            const assistantContent = Array.isArray(aiMsg.content) ? [...aiMsg.content] : [];
+            const assistantContent = Array.isArray(aiMsg.content)
+              ? [...aiMsg.content]
+              : [];
             if (role === "assistant") {
               if (content) {
-                const lastTextBlock = assistantContent[assistantContent.length - 1];
-                if (lastTextBlock && lastTextBlock.type === MsgType.TEXT && lastTextBlock.content !== content) {
+                const lastTextBlock =
+                  assistantContent[assistantContent.length - 1];
+                if (
+                  lastTextBlock &&
+                  lastTextBlock.type === MsgType.TEXT &&
+                  lastTextBlock.content !== content
+                ) {
                   lastTextBlock.content = content;
-                } else if (!lastTextBlock || lastTextBlock.type !== MsgType.TEXT) {
+                } else if (
+                  !lastTextBlock ||
+                  lastTextBlock.type !== MsgType.TEXT
+                ) {
                   assistantContent.push({ type: MsgType.TEXT, content });
                 }
               }
               if (toolCalls && Array.isArray(toolCalls)) {
                 lastToolCallId = toolCalls[0]?.id || null;
-                const exists = assistantContent.some(block => block.type === MsgType.TOOL_CALL && block.tool_calls?.some(tc => tc.id === lastToolCallId));
+                const exists = assistantContent.some(
+                  (block) =>
+                    block.type === MsgType.TOOL_CALL &&
+                    block.tool_calls?.some((tc) => tc.id === lastToolCallId),
+                );
                 if (!exists) {
-                  assistantContent.push({ 
-                    type: MsgType.TOOL_CALL, 
-                    tool_calls: toolCalls.map(tc => ({ 
-                      id: tc.id || "", 
-                      name: tc.name, 
+                  assistantContent.push({
+                    type: MsgType.TOOL_CALL,
+                    tool_calls: toolCalls.map((tc) => ({
+                      id: tc.id || "",
+                      name: tc.name,
                       args: tc.args,
-                      status: ToolCallStatus.EXECUTING 
-                    })) 
+                      status: ToolCallStatus.EXECUTING,
+                    })),
                   });
                 }
               }
             } else if (role === "tool") {
-              const toolId = msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
+              const toolId =
+                msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
               for (const block of assistantContent) {
                 if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                  const tc = block.tool_calls.find(t => t.id === toolId);
+                  const tc = block.tool_calls.find((t) => t.id === toolId);
                   if (tc) {
                     // 尝试解析结构化结果
                     try {
                       const parsed = JSON.parse(content);
-                      if (parsed && typeof parsed === "object" && "status" in parsed && "output" in parsed) {
+                      if (
+                        parsed &&
+                        typeof parsed === "object" &&
+                        "status" in parsed &&
+                        "output" in parsed
+                      ) {
                         tc.result = parsed.output;
                         tc.status = parsed.status as ToolCallStatus;
                       } else {
@@ -474,12 +859,15 @@ export function AppContainer({ config }: AppContainerProps) {
                     } catch {
                       // 回退到正则猜测逻辑（用于非结构化输出）
                       tc.result = content;
-                      const isCancelled = content.includes("Command cancelled by user");
-                      const isError = /Error[:\s]/i.test(content) || 
-                                      content.toLowerCase().includes("failed") || 
-                                      content.includes("ENOENT") || 
-                                      content.includes("EACCES");
-                      
+                      const isCancelled = content.includes(
+                        "Command cancelled by user",
+                      );
+                      const isError =
+                        /Error[:\s]/i.test(content) ||
+                        content.toLowerCase().includes("failed") ||
+                        content.includes("ENOENT") ||
+                        content.includes("EACCES");
+
                       if (isCancelled) tc.status = ToolCallStatus.CANCELED;
                       else if (isError) tc.status = ToolCallStatus.ERROR;
                       else tc.status = ToolCallStatus.SUCCESS;
@@ -488,11 +876,15 @@ export function AppContainer({ config }: AppContainerProps) {
                 }
               }
             }
-            aiMsg.content = assistantContent; next[idx] = aiMsg; return next;
+            aiMsg.content = assistantContent;
+            next[idx] = aiMsg;
+            return next;
           });
         }
       }
-    } catch (e) { if (!abortController.signal.aborted) throw e; }
+    } catch (e) {
+      if (!abortController.signal.aborted) throw e;
+    }
     setMessages((prev) => {
       const next = [...prev];
       const idx = aiMsgIndex;
@@ -501,22 +893,32 @@ export function AppContainer({ config }: AppContainerProps) {
     });
     try {
       if (agent) {
-        const history = await agent.graph.getState({ 
-          configurable: { thread_id: config.sessionId || "main-session" } 
+        const history = await agent.graph.getState({
+          configurable: { thread_id: activeSessionId },
         });
-        if (history?.values?.messages) { (history.values.messages as BaseMessage[]).forEach(msg => { if (msg.id) seenMessageIdsRef.current.add(msg.id); }); }
+        if (history?.values?.messages) {
+          (history.values.messages as BaseMessage[]).forEach((msg) => {
+            if (msg.id) seenMessageIdsRef.current.add(msg.id);
+          });
+        }
       }
     } catch (e) {}
   };
 
-  const handleDecision = async (decision: "approve" | "reject", toolId: string, interrupt?: Interrupt) => {
+  const handleDecision = async (
+    decision: "approve" | "reject",
+    toolId: string,
+    interrupt?: Interrupt,
+  ) => {
     if (!agent || !interrupt) return;
     activeStreamsRef.current++;
     setIsProcessing(true);
     try {
       setMessages((prev) => {
         const next = [...prev];
-        const aiIdx = [...next].reverse().findIndex(m => m.role === Role.ASSISTANT);
+        const aiIdx = [...next]
+          .reverse()
+          .findIndex((m) => m.role === Role.ASSISTANT);
         if (aiIdx !== -1) {
           const idx = next.length - 1 - aiIdx;
           next[idx] = { ...next[idx], streaming: true };
@@ -526,7 +928,9 @@ export function AppContainer({ config }: AppContainerProps) {
           if (msg.role === Role.ASSISTANT && Array.isArray(msg.content)) {
             for (const block of msg.content) {
               if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                block.tool_calls.forEach(tc => { if (tc.interrupt) delete tc.interrupt; });
+                block.tool_calls.forEach((tc) => {
+                  if (tc.interrupt) delete tc.interrupt;
+                });
               }
             }
           }
@@ -534,25 +938,46 @@ export function AppContainer({ config }: AppContainerProps) {
         return next;
       });
       let decisions = [{ type: decision }];
-      if (interrupt?.value?.action_requests) decisions = interrupt.value.action_requests.map(() => ({ type: decision }));
+      if (interrupt?.value?.action_requests)
+        decisions = interrupt.value.action_requests.map(() => ({
+          type: decision,
+        }));
       const stream = await agent.stream(
-        new Command({ resume: { [interrupt.id]: { decisions } } }) as any, 
-        { 
-          streamMode: "updates", 
-          configurable: { thread_id: config.sessionId || "main-session" } 
-        }
+        new Command({ resume: { [interrupt.id]: { decisions } } }) as any,
+        {
+          streamMode: "updates",
+          configurable: { thread_id: activeSessionId },
+        },
       );
       await processAiStream(stream, abortControllerRef.current!);
-    } catch (error) { handleError(error); } finally { activeStreamsRef.current--; if (activeStreamsRef.current <= 0) setIsProcessing(false); }
+    } catch (error) {
+      handleError(error);
+    } finally {
+      activeStreamsRef.current--;
+      if (activeStreamsRef.current <= 0) setIsProcessing(false);
+    }
   };
 
   const handleError = (error: unknown) => {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
-    setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `System Error: ${errorMsg}`, timestamp: new Date(), error: true }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: Role.ASSISTANT,
+        content: `System Error: ${errorMsg}`,
+        timestamp: new Date(),
+        error: true,
+      },
+    ]);
   };
 
   useEffect(() => {
-    if (config.query && !config.interactive && agent && !queryExecutedRef.current) {
+    if (
+      config.query &&
+      !config.interactive &&
+      agent &&
+      !queryExecutedRef.current
+    ) {
       queryExecutedRef.current = true;
       handleCommand(config.query, true);
     }
@@ -570,20 +995,63 @@ export function AppContainer({ config }: AppContainerProps) {
           setCursorPosition(0);
         } else {
           console.log(`\n\n  \x1b[36mTo resume this session, run:\x1b[0m`);
-          console.log(`  \x1b[1mopenshell --session ${config.sessionId}\x1b[0m\n`);
+          console.log(
+            `  \x1b[1mopenshell --session ${activeSessionId}\x1b[0m\n`,
+          );
           exit();
           setTimeout(() => process.exit(0), 100);
         }
         return;
       }
 
-      // 2. 处理 ESC 键：取消当前处理中的任务或 HITL 中断
+      // 2. 会话选择模式按键处理（优先于其他按键）
+      if (isSelectingSession) {
+        if (key.name === "escape") {
+          setIsSelectingSession(false);
+          return;
+        }
+        if (key.name === "x") {
+          const target = sessionList[sessionSelectorIndex];
+          if (target) {
+            void deleteSession(target.value).then(() => {
+              listAllSessions().then((sessions) => {
+                const formatted = sessions.map((s) => ({
+                  label: `${s.thread_id} (Updated: ${new Date(s.updated_at).toLocaleString()})`,
+                  value: s.thread_id,
+                }));
+                setSessionList(formatted);
+                if (sessionSelectorIndex >= formatted.length) {
+                  setSessionSelectorIndex(Math.max(0, formatted.length - 1));
+                }
+              });
+            });
+          }
+          return;
+        }
+        if (key.name === "up") {
+          setSessionSelectorIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setSessionSelectorIndex((prev) =>
+            Math.min(sessionList.length - 1, prev + 1),
+          );
+          return;
+        }
+        // Enter 键由 SelectInput 组件处理，这里跳过以避免重复触发
+        return;
+      }
+
+      // 3. 处理 ESC 键：取消当前处理中的任务或 HITL 中断
       if (key.name === "escape") {
         const now = Date.now();
         if (now - lastEscapeTimeRef.current < 100) return;
         lastEscapeTimeRef.current = now;
 
-        if (isProcessingRef.current || messagesRef.current.some(messageHasInterrupt)) {
+        if (
+          isProcessingRef.current ||
+          messagesRef.current.some(messageHasInterrupt)
+        ) {
           void cancelCurrentTask();
         }
         return;
@@ -605,7 +1073,10 @@ export function AppContainer({ config }: AppContainerProps) {
         lastPasteEndRef.current = Date.now();
         const pastedContent = pasteBufferRef.current;
         if (pastedContent) {
-          const newValue = currentInputValue.slice(0, currentCursorPosition) + pastedContent + currentInputValue.slice(currentCursorPosition);
+          const newValue =
+            currentInputValue.slice(0, currentCursorPosition) +
+            pastedContent +
+            currentInputValue.slice(currentCursorPosition);
           const nextPos = currentCursorPosition + pastedContent.length;
           inputValueRef.current = newValue;
           cursorRef.current = nextPos;
@@ -616,146 +1087,263 @@ export function AppContainer({ config }: AppContainerProps) {
         return;
       }
 
-      if (key.ctrl && key.name === "a") { setAutoExecute((prev) => !prev); return; }
+      if (key.ctrl && key.name === "a") {
+        setAutoExecute((prev) => !prev);
+        return;
+      }
 
       // --- Shell 模式逻辑 ---
-      if (key.name === "!" && currentCursorPosition === 0 && currentMode === "agent") { 
-        setMode("shell"); 
+      if (
+        key.name === "!" &&
+        currentCursorPosition === 0 &&
+        currentMode === "agent"
+      ) {
+        setMode("shell");
         modeRef.current = "shell";
-        return; 
+        return;
       }
       if (currentMode === "shell") {
-        if (key.name === "escape" || (key.name === "backspace" && currentCursorPosition === 0)) { 
-          setMode("agent"); 
+        if (
+          key.name === "escape" ||
+          (key.name === "backspace" && currentCursorPosition === 0)
+        ) {
+          setMode("agent");
           modeRef.current = "agent";
-          return; 
+          return;
         }
-        if (!isPastingRef.current && (key.name === "return" || key.name === "enter")) {
+        if (
+          !isPastingRef.current &&
+          (key.name === "return" || key.name === "enter")
+        ) {
           if (currentInputValue.trim()) {
             const command = currentInputValue.trim();
             shellHistoryRef.current.push(command);
             historyIndexRef.current = -1;
-            setMessages((prev) => [...prev, { role: Role.USER, content: `! ${command}`, timestamp: new Date() }]);
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: Role.USER,
+                content: `! ${command}`,
+                timestamp: new Date(),
+              },
+            ]);
             void (async () => {
               try {
-                setIsProcessing(true); isProcessingRef.current = true;
+                setIsProcessing(true);
+                isProcessingRef.current = true;
                 const commandManager = getCommandManager();
-                const { command_id, pid } = await commandManager.startCommand(command, "Shell mode command");
+                const { command_id, pid } = await commandManager.startCommand(
+                  command,
+                  "Shell mode command",
+                );
                 const output = await new Promise<string>((resolve) => {
                   const check = () => {
                     const cmd = commandManager.getCommand(command_id);
-                    if (!cmd) { resolve("Command not found"); return; }
-                    if (cmd.status === "running") { setTimeout(check, 100); return; }
-                    resolve(commandManager.getCommandOutput(command_id) || `(exit code: ${cmd.exitCode})`);
+                    if (!cmd) {
+                      resolve("Command not found");
+                      return;
+                    }
+                    if (cmd.status === "running") {
+                      setTimeout(check, 100);
+                      return;
+                    }
+                    resolve(
+                      commandManager.getCommandOutput(command_id) ||
+                        `(exit code: ${cmd.exitCode})`,
+                    );
                   };
                   check();
                 });
-                setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `Command executed (PID: ${pid}):\n${output || "(no output)"}`, timestamp: new Date() }]);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: Role.ASSISTANT,
+                    content: `Command executed (PID: ${pid}):\n${output || "(no output)"}`,
+                    timestamp: new Date(),
+                  },
+                ]);
               } catch (error) {
-                setMessages((prev) => [...prev, { role: Role.ASSISTANT, content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`, timestamp: new Date(), error: true }]);
-              } finally { setIsProcessing(false); isProcessingRef.current = false; setMode("agent"); modeRef.current = "agent"; }
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: Role.ASSISTANT,
+                    content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    timestamp: new Date(),
+                    error: true,
+                  },
+                ]);
+              } finally {
+                setIsProcessing(false);
+                isProcessingRef.current = false;
+                setMode("agent");
+                modeRef.current = "agent";
+              }
             })();
-            inputValueRef.current = ""; cursorRef.current = 0;
-            setInputValue(""); setCursorPosition(0);
+            inputValueRef.current = "";
+            cursorRef.current = 0;
+            setInputValue("");
+            setCursorPosition(0);
           }
           return;
         }
       }
 
-      if (messagesRef.current.some(messageHasInterrupt) || isProcessingRef.current) return;
+      if (
+        messagesRef.current.some(messageHasInterrupt) ||
+        isProcessingRef.current
+      )
+        return;
 
       // --- 回车与粘贴保护 ---
       if (key.name === "return" || key.name === "enter") {
-        const isActuallyPasting = isPastingRef.current || (Date.now() - lastPasteEndRef.current < 50);
+        const isActuallyPasting =
+          isPastingRef.current || Date.now() - lastPasteEndRef.current < 50;
         if (!isActuallyPasting) {
           if (suggestionsRef.current.length > 0) {
             const picked = suggestionsRef.current[selectedIndexRef.current];
             handleCommand("/" + picked);
-            inputValueRef.current = ""; cursorRef.current = 0;
-            setInputValue(""); setCursorPosition(0); setSuggestions([]); suggestionsRef.current = [];
+            inputValueRef.current = "";
+            cursorRef.current = 0;
+            setInputValue("");
+            setCursorPosition(0);
+            setSuggestions([]);
+            suggestionsRef.current = [];
             return;
           }
           if (currentInputValue.trim()) {
             handleCommand(currentInputValue.trim());
-            inputValueRef.current = ""; cursorRef.current = 0;
-            setInputValue(""); setCursorPosition(0);
+            inputValueRef.current = "";
+            cursorRef.current = 0;
+            setInputValue("");
+            setCursorPosition(0);
           }
         } else {
           const char = "\n";
-          const newValue = currentInputValue.slice(0, currentCursorPosition) + char + currentInputValue.slice(currentCursorPosition);
-          inputValueRef.current = newValue; cursorRef.current = currentCursorPosition + 1;
-          setInputValue(newValue); setCursorPosition(currentCursorPosition + 1);
+          const newValue =
+            currentInputValue.slice(0, currentCursorPosition) +
+            char +
+            currentInputValue.slice(currentCursorPosition);
+          inputValueRef.current = newValue;
+          cursorRef.current = currentCursorPosition + 1;
+          setInputValue(newValue);
+          setCursorPosition(currentCursorPosition + 1);
         }
         return;
       }
 
       // --- 导航与删除 ---
-      if (key.name === "left") { 
+      if (key.name === "left") {
         const p = Math.max(0, cursorRef.current - 1);
-        cursorRef.current = p; setCursorPosition(p); 
-        return; 
+        cursorRef.current = p;
+        setCursorPosition(p);
+        return;
       }
-      if (key.name === "right") { 
+      if (key.name === "right") {
         const p = Math.min(inputValueRef.current.length, cursorRef.current + 1);
-        cursorRef.current = p; setCursorPosition(p); 
-        return; 
+        cursorRef.current = p;
+        setCursorPosition(p);
+        return;
       }
       if (key.name === "up") {
         if (suggestionsRef.current.length > 0) {
-          const nextIndex = (selectedIndexRef.current - 1 + suggestionsRef.current.length) % suggestionsRef.current.length;
-          selectedIndexRef.current = nextIndex; setSelectedIndex(nextIndex); return;
+          const nextIndex =
+            (selectedIndexRef.current - 1 + suggestionsRef.current.length) %
+            suggestionsRef.current.length;
+          selectedIndexRef.current = nextIndex;
+          setSelectedIndex(nextIndex);
+          return;
         }
-        const history = currentMode === "shell" ? shellHistoryRef.current : commandHistoryRef.current;
+        const history =
+          currentMode === "shell"
+            ? shellHistoryRef.current
+            : commandHistoryRef.current;
         if (history.length === 0) return;
-        if (historyIndexRef.current === -1) { draftInputRef.current = inputValueRef.current; historyIndexRef.current = history.length - 1; }
-        else if (historyIndexRef.current > 0) { historyIndexRef.current -= 1; } else return;
+        if (historyIndexRef.current === -1) {
+          draftInputRef.current = inputValueRef.current;
+          historyIndexRef.current = history.length - 1;
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current -= 1;
+        } else return;
         const historicalCommand = history[historyIndexRef.current];
-        inputValueRef.current = historicalCommand; cursorRef.current = historicalCommand.length;
-        setInputValue(historicalCommand); setCursorPosition(historicalCommand.length);
+        inputValueRef.current = historicalCommand;
+        cursorRef.current = historicalCommand.length;
+        setInputValue(historicalCommand);
+        setCursorPosition(historicalCommand.length);
         return;
       }
       if (key.name === "down") {
         if (suggestionsRef.current.length > 0) {
-          const nextIndex = (selectedIndexRef.current + 1) % suggestionsRef.current.length;
-          selectedIndexRef.current = nextIndex; setSelectedIndex(nextIndex); return;
+          const nextIndex =
+            (selectedIndexRef.current + 1) % suggestionsRef.current.length;
+          selectedIndexRef.current = nextIndex;
+          setSelectedIndex(nextIndex);
+          return;
         }
-        const history = currentMode === "shell" ? shellHistoryRef.current : commandHistoryRef.current;
+        const history =
+          currentMode === "shell"
+            ? shellHistoryRef.current
+            : commandHistoryRef.current;
         if (historyIndexRef.current === -1) return;
         if (historyIndexRef.current < history.length - 1) {
           historyIndexRef.current += 1;
           const historicalCommand = history[historyIndexRef.current];
-          inputValueRef.current = historicalCommand; cursorRef.current = historicalCommand.length;
-          setInputValue(historicalCommand); setCursorPosition(historicalCommand.length);
+          inputValueRef.current = historicalCommand;
+          cursorRef.current = historicalCommand.length;
+          setInputValue(historicalCommand);
+          setCursorPosition(historicalCommand.length);
         } else {
           historyIndexRef.current = -1;
-          inputValueRef.current = draftInputRef.current; cursorRef.current = draftInputRef.current.length;
-          setInputValue(draftInputRef.current); setCursorPosition(draftInputRef.current.length);
+          inputValueRef.current = draftInputRef.current;
+          cursorRef.current = draftInputRef.current.length;
+          setInputValue(draftInputRef.current);
+          setCursorPosition(draftInputRef.current.length);
           draftInputRef.current = "";
         }
         return;
       }
-      if (key.name === "home") { cursorRef.current = 0; setCursorPosition(0); return; }
-      if (key.name === "end") { cursorRef.current = inputValueRef.current.length; setCursorPosition(inputValueRef.current.length); return; }
+      if (key.name === "home") {
+        cursorRef.current = 0;
+        setCursorPosition(0);
+        return;
+      }
+      if (key.name === "end") {
+        cursorRef.current = inputValueRef.current.length;
+        setCursorPosition(inputValueRef.current.length);
+        return;
+      }
       if (key.name === "backspace") {
         if (cursorRef.current > 0) {
-          const newValue = inputValueRef.current.slice(0, cursorRef.current - 1) + inputValueRef.current.slice(cursorRef.current);
+          const newValue =
+            inputValueRef.current.slice(0, cursorRef.current - 1) +
+            inputValueRef.current.slice(cursorRef.current);
           const nextPos = cursorRef.current - 1;
-          inputValueRef.current = newValue; cursorRef.current = nextPos;
-          setInputValue(newValue); setCursorPosition(nextPos);
+          inputValueRef.current = newValue;
+          cursorRef.current = nextPos;
+          setInputValue(newValue);
+          setCursorPosition(nextPos);
         }
         return;
       }
       if (key.name === "delete") {
         if (cursorRef.current < inputValueRef.current.length) {
-          const newValue = inputValueRef.current.slice(0, cursorRef.current) + inputValueRef.current.slice(cursorRef.current + 1);
-          inputValueRef.current = newValue; setInputValue(newValue);
+          const newValue =
+            inputValueRef.current.slice(0, cursorRef.current) +
+            inputValueRef.current.slice(cursorRef.current + 1);
+          inputValueRef.current = newValue;
+          setInputValue(newValue);
         }
         return;
       }
 
       // --- 打字输入逻辑 (支持多字符 sequence) ---
       const isPrintable = key.sequence && !key.ctrl && !key.meta;
-      if (isPrintable && (key.name === "space" || !key.name || key.name.length === 1 || isPastingRef.current)) {
+      if (
+        isPrintable &&
+        (key.name === "space" ||
+          !key.name ||
+          key.name.length === 1 ||
+          isPastingRef.current)
+      ) {
         const char = key.name === "space" ? " " : key.sequence;
         if (isPastingRef.current) {
           pasteBufferRef.current += char;
@@ -763,9 +1351,12 @@ export function AppContainer({ config }: AppContainerProps) {
           // 在处理打印字符时，立即使用最新的 Ref 拼接
           const latestValue = inputValueRef.current;
           const latestPos = cursorRef.current;
-          const newValue = latestValue.slice(0, latestPos) + char + latestValue.slice(latestPos);
+          const newValue =
+            latestValue.slice(0, latestPos) +
+            char +
+            latestValue.slice(latestPos);
           const nextPos = latestPos + char.length;
-          
+
           inputValueRef.current = newValue;
           cursorRef.current = nextPos;
           setInputValue(newValue);
@@ -774,34 +1365,93 @@ export function AppContainer({ config }: AppContainerProps) {
       }
     };
 
-    const { listener: dataListener, cleanup: cleanupKeyListener } = createDataListener(handleKey);
-    if (activeQuestionRequest) { cleanupKeyListener(); return; }
+    const { listener: dataListener, cleanup: cleanupKeyListener } =
+      createDataListener(handleKey);
+    if (activeQuestionRequest) {
+      cleanupKeyListener();
+      return;
+    }
     cleanupKeyListenerRef.current = cleanupKeyListener;
     stdin.on("data", dataListener);
-    return () => { stdin.off("data", dataListener); cleanupKeyListener(); };
-  }, [isProcessing, handleCommand, stdin, setRawMode, exit, activeQuestionRequest, mode]);
+    return () => {
+      stdin.off("data", dataListener);
+      cleanupKeyListener();
+    };
+  }, [
+    isProcessing,
+    handleCommand,
+    stdin,
+    setRawMode,
+    exit,
+    activeQuestionRequest,
+    mode,
+  ]);
 
-  const stableMessages = messages.filter((m) => !m.streaming && !messageHasInterrupt(m));
-  const activeMessages = messages.filter((m) => m.streaming || messageHasInterrupt(m));
-  const pendingInterruptMessages = activeMessages.filter(messageHasInterrupt).flatMap((msg) => {
-    if (!Array.isArray(msg.content)) return [];
-    return (msg.content as AssistantMessage[]).filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls).flatMap((b) => b.tool_calls || []).filter((tc) => tc.interrupt);
-  });
+  const stableMessages = messages.filter(
+    (m) => !m.streaming && !messageHasInterrupt(m),
+  );
+  const activeMessages = messages.filter(
+    (m) => m.streaming || messageHasInterrupt(m),
+  );
+  const pendingInterruptMessages = activeMessages
+    .filter(messageHasInterrupt)
+    .flatMap((msg) => {
+      if (!Array.isArray(msg.content)) return [];
+      return (msg.content as AssistantMessage[])
+        .filter((b) => b.type === MsgType.TOOL_CALL && b.tool_calls)
+        .flatMap((b) => b.tool_calls || [])
+        .filter((tc) => tc.interrupt);
+    });
 
   const renderPendingApprovals = () => {
     if (pendingInterruptMessages.length === 0) return null;
 
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Text color="yellow" bold>Review Required ({pendingInterruptMessages.length} actions):</Text>
+        <Text color="yellow" bold>
+          Review Required ({pendingInterruptMessages.length} actions):
+        </Text>
         {pendingInterruptMessages.map((tc, index) => {
           if (!tc.interrupt) return null;
           return (
-            <Box key={tc.id || index} flexDirection="column" marginLeft={2} marginTop={1} padding={1} borderStyle="round" borderColor="yellow" borderDimColor={true} width={innerWidth}>
-              <Text color="yellow" bold>{index + 1}. {tc.name}</Text>
-              <Text dimColor wrap="wrap">{Object.entries(tc.args).map(([k, v]) => `${k}: ${v}`).join(", ")}</Text>
-              <Text color="yellow" dimColor wrap="wrap">{tc.interrupt.value?.action_requests?.[0]?.description || "Action requires approval"}</Text>
-              <Box marginTop={1}><SelectInput items={[{ label: t("hitl.approveLabel"), value: "approve" }, { label: t("hitl.rejectLabel"), value: "reject" }]} onSelect={(item) => handleDecision(item.value as "approve" | "reject", tc.id || "", tc.interrupt!)} /></Box>
+            <Box
+              key={tc.id || index}
+              flexDirection="column"
+              marginLeft={2}
+              marginTop={1}
+              padding={1}
+              borderStyle="round"
+              borderColor="yellow"
+              borderDimColor={true}
+              width={innerWidth}
+            >
+              <Text color="yellow" bold>
+                {index + 1}. {tc.name}
+              </Text>
+              <Text dimColor wrap="wrap">
+                {Object.entries(tc.args)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(", ")}
+              </Text>
+              <Text color="yellow" dimColor wrap="wrap">
+                {tc.interrupt.value?.action_requests?.[0]?.description ||
+                  "Action requires approval"}
+              </Text>
+              <Box marginTop={1}>
+                <SelectInput
+                  items={[
+                    { label: t("hitl.approveLabel"), value: "approve" },
+                    { label: t("hitl.rejectLabel"), value: "reject" },
+                  ]}
+                  onSelect={(item) =>
+                    handleDecision(
+                      item.value as "approve" | "reject",
+                      tc.id || "",
+                      tc.interrupt!,
+                    )
+                  }
+                />
+              </Box>
             </Box>
           );
         })}
@@ -813,18 +1463,51 @@ export function AppContainer({ config }: AppContainerProps) {
     <Box flexDirection="column" paddingX={1}>
       <Static items={["banner"]} key="brand-banner">
         {(item) => (
-          <Box key={item} marginBottom={1} flexDirection="column" alignItems="center" width="100%">
-            <Gradient name="morning"><BigText text="OpenShell" font="block" /></Gradient>
+          <Box
+            key={item}
+            marginBottom={1}
+            flexDirection="column"
+            alignItems="center"
+            width="100%"
+          >
+            <Gradient name="morning">
+              <BigText text="OpenShell" font="block" />
+            </Gradient>
             <Box marginTop={1} flexDirection="row" gap={2}>
-              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Enter</Text><Text dimColor>{t("shortcuts.sendLabel")}</Text></Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyan" bold>
+                  Enter
+                </Text>
+                <Text dimColor>{t("shortcuts.sendLabel")}</Text>
+              </Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Esc</Text><Text dimColor>{t("shortcuts.cancelLabel")}</Text></Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyan" bold>
+                  Esc
+                </Text>
+                <Text dimColor>{t("shortcuts.cancelLabel")}</Text>
+              </Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Ctrl+A</Text><Text dimColor>{t("status.autoExecuteLabel")}</Text></Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyan" bold>
+                  Ctrl+A
+                </Text>
+                <Text dimColor>{t("status.autoExecuteLabel")}</Text>
+              </Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}><Text color="cyan" bold>↑/↓</Text><Text dimColor>{t("shortcuts.historyLabel")}</Text></Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyan" bold>
+                  ↑/↓
+                </Text>
+                <Text dimColor>{t("shortcuts.historyLabel")}</Text>
+              </Box>
               <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}><Text color="cyan" bold>Ctrl+C</Text><Text dimColor>{t("shortcuts.exitLabel")}</Text></Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyan" bold>
+                  Ctrl+C
+                </Text>
+                <Text dimColor>{t("shortcuts.exitLabel")}</Text>
+              </Box>
             </Box>
           </Box>
         )}
@@ -832,11 +1515,17 @@ export function AppContainer({ config }: AppContainerProps) {
 
       {isLoading ? (
         <Box flexDirection="column" marginY={1}>
-          <Box flexDirection="row" alignItems="center" gap={1}><Spinner type="dots" /><Text>{t("app.initializing")}...</Text></Box>
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            <Spinner type="dots" />
+            <Text>{t("app.initializing")}...</Text>
+          </Box>
         </Box>
       ) : (
         <>
-          <Static items={stableMessages} key="static-history">
+          <Static
+            items={stableMessages}
+            key={`static-history-${activeSessionId}`}
+          >
             {(msg, index) => (
               <MessageComponent
                 key={`stable-${msg.timestamp.getTime()}-${index}`}
@@ -851,37 +1540,135 @@ export function AppContainer({ config }: AppContainerProps) {
             />
           ))}
           <Box flexDirection="column" marginTop={1}>
-            <Box flexDirection="row" justifyContent="space-between" width={mainWidth}>
+            <Box
+              flexDirection="row"
+              justifyContent="space-between"
+              width={mainWidth}
+            >
               <Box flexDirection="row" alignItems="center" gap={1}>
-                <Text bold color="cyan">OpenShell {config.version}</Text>
+                <Text bold color="cyan">
+                  OpenShell {config.version}
+                </Text>
                 <Text dimColor>|</Text>
-                <Text bold color={mode === "shell" ? "green" : "cyan"}>[{mode === "shell" ? "Shell" : "Agent"}]</Text>
+                <Text dimColor>Session: {activeSessionId}</Text>
+                <Text dimColor>|</Text>
+                <Text bold color={mode === "shell" ? "green" : "cyan"}>
+                  [{mode === "shell" ? "Shell" : "Agent"}]
+                </Text>
               </Box>
               <Box flexDirection="row" gap={2}>
-                <Text color="magenta">{t("status.runningLabel")}: {runningCommands} |</Text>
-                <Text color="magenta">{t("status.autoExecuteLabel")}(Ctrl+A): {autoExecute ? "✓" : "✗"}</Text>
+                <Text color="magenta">
+                  {t("status.runningLabel")}: {runningCommands} |
+                </Text>
+                <Text color="magenta">
+                  {t("status.autoExecuteLabel")}(Ctrl+A):{" "}
+                  {autoExecute ? "✓" : "✗"}
+                </Text>
               </Box>
             </Box>
             <Box flexDirection="column" marginTop={0} marginBottom={1}>
               {activeQuestionRequest ? (
-                <AskUserDialog request={activeQuestionRequest} onFinished={() => setActiveQuestionRequest(null)} />
+                <AskUserDialog
+                  request={activeQuestionRequest}
+                  onFinished={() => setActiveQuestionRequest(null)}
+                />
+              ) : isSelectingSession ? (
+                <Box
+                  flexDirection="column"
+                  padding={1}
+                  borderStyle="round"
+                  borderColor="cyan"
+                  borderDimColor={true}
+                  width={mainWidth}
+                >
+                  <Text bold color="cyan">
+                    Select a session to restore:
+                  </Text>
+                  <Box marginTop={1}>
+                    {sessionList.length > 0 ? (
+                      <SelectInput
+                        items={sessionList}
+                        onSelect={(item) => {
+                          setIsSelectingSession(false);
+                          const command = `/session ${item.value}`;
+                          void handleCommand(command);
+                        }}
+                      />
+                    ) : (
+                      <Text dimColor>No historical sessions found.</Text>
+                    )}
+                  </Box>
+                  <Box marginTop={1}>
+                    <Text dimColor color="gray">
+                      Navigate: ↑/↓ | Resume: Enter | Delete: x | Cancel: ESC
+                    </Text>
+                  </Box>
+                </Box>
               ) : pendingInterruptMessages.length > 0 ? (
                 <Box flexDirection="column">{renderPendingApprovals()}</Box>
               ) : (
-                <Box flexDirection="row" paddingX={1} borderStyle="round" borderColor={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} borderDimColor={true} alignItems="flex-start" width={mainWidth}>
-                  <Text color={isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"} bold>{mode === "shell" ? "! " : "> "}</Text>
+                <Box
+                  flexDirection="row"
+                  paddingX={1}
+                  borderStyle="round"
+                  borderColor={
+                    isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"
+                  }
+                  borderDimColor={true}
+                  alignItems="flex-start"
+                  width={mainWidth}
+                >
+                  <Text
+                    color={
+                      isProcessing
+                        ? "gray"
+                        : mode === "shell"
+                          ? "green"
+                          : "cyan"
+                    }
+                    bold
+                  >
+                    {mode === "shell" ? "! " : "> "}
+                  </Text>
                   <Box flexGrow={1}>
                     {isProcessing ? (
-                      inputValue ? <Text dimColor wrap="wrap">{inputValue}</Text> : <Box flexDirection="row"><Text color="yellow"><Spinner type="dots" /></Text><Text dimColor> Processing...</Text></Box>
+                      inputValue ? (
+                        <Text dimColor wrap="wrap">
+                          {inputValue}
+                        </Text>
+                      ) : (
+                        <Box flexDirection="row">
+                          <Text color="yellow">
+                            <Spinner type="dots" />
+                          </Text>
+                          <Text dimColor> Processing...</Text>
+                        </Box>
+                      )
                     ) : inputValue.length === 0 ? (
-                      <Text><Text inverse>T</Text><Text dimColor>ype your message or ! for shell mode</Text></Text>
+                      <Text>
+                        <Text inverse>T</Text>
+                        <Text dimColor>
+                          ype your message or ! for shell mode
+                        </Text>
+                      </Text>
                     ) : (
-                      <Text wrap="wrap"><Text>{inputValue.slice(0, cursorPosition)}</Text><Text inverse>{inputValue[cursorPosition] || " "}</Text><Text>{inputValue.slice(cursorPosition + 1)}</Text></Text>
+                      <Text wrap="wrap">
+                        <Text>{inputValue.slice(0, cursorPosition)}</Text>
+                        <Text inverse>{inputValue[cursorPosition] || " "}</Text>
+                        <Text>{inputValue.slice(cursorPosition + 1)}</Text>
+                      </Text>
                     )}
                   </Box>
                 </Box>
               )}
-              <Box paddingX={2} marginTop={0} marginBottom={1} flexDirection="row" justifyContent="space-between" width={mainWidth}>
+              <Box
+                paddingX={2}
+                marginTop={0}
+                marginBottom={1}
+                flexDirection="row"
+                justifyContent="space-between"
+                width={mainWidth}
+              >
                 <Box>
                   <Text dimColor color="gray">
                     {shortenPath(tildeifyPath(currentDir))}
@@ -902,16 +1689,36 @@ export function AppContainer({ config }: AppContainerProps) {
               </Box>
 
               {suggestions.length > 0 && (
-                <Box flexDirection="column" marginTop={1} paddingLeft={2} borderStyle="round" borderColor="gray" borderDimColor={true} width={innerWidth}>
-                  {suggestions.map((cmd, idx) => (<Box key={cmd}><Text color={idx === selectedIndex ? "cyan" : "white"} bold={idx === selectedIndex}>{idx === selectedIndex ? "→ " : "  "}/{cmd}</Text></Box>))}
+                <Box
+                  flexDirection="column"
+                  marginTop={1}
+                  paddingLeft={2}
+                  borderStyle="round"
+                  borderColor="gray"
+                  borderDimColor={true}
+                  width={innerWidth}
+                >
+                  {suggestions.map((cmd, idx) => (
+                    <Box key={cmd}>
+                      <Text
+                        color={idx === selectedIndex ? "cyan" : "white"}
+                        bold={idx === selectedIndex}
+                      >
+                        {idx === selectedIndex ? "→ " : "  "}/{cmd}
+                      </Text>
+                    </Box>
+                  ))}
                 </Box>
               )}
             </Box>
           </Box>
-
         </>
       )}
-      {config.debug && <Box marginBottom={1}><Text color="yellow">DEBUG: {t("app.debugMode")}</Text></Box>}
+      {config.debug && (
+        <Box marginBottom={1}>
+          <Text color="yellow">DEBUG: {t("app.debugMode")}</Text>
+        </Box>
+      )}
     </Box>
   );
 }

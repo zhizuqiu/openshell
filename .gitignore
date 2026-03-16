@@ -30,5 +30,6 @@ npm-debug.log*
 
 # External
 gemini-cli/
+tmp_src/
 
 bin-dist

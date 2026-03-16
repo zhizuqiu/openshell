@@ -29,14 +29,63 @@ let checkpointer: SqliteSaver | null = null;
 async function getCheckpointer() {
   if (checkpointer) return checkpointer;
 
-  const dbDir = path.join(os.homedir(), ".openshell");
-  await fs.mkdir(dbDir, { recursive: true });
-  
-  const dbPath = path.join(dbDir, "openshell.db");
+  const envPath = process.env["OPENSHELL_DB_PATH"];
+  let dbPath: string;
+
+  if (envPath) {
+    dbPath = envPath;
+  } else {
+    const dbDir = path.join(os.homedir(), ".openshell");
+    await fs.mkdir(dbDir, { recursive: true });
+    dbPath = path.join(dbDir, "openshell.db");
+  }
   
   // Use fromConnString for more robust internal setup
   checkpointer = SqliteSaver.fromConnString(dbPath);
   return checkpointer;
+}
+
+import Database from "better-sqlite3";
+
+export async function listAllSessions(): Promise<{ thread_id: string; updated_at: string }[]> {
+  const envPath = process.env["OPENSHELL_DB_PATH"];
+  const dbPath = envPath || path.join(os.homedir(), ".openshell", "openshell.db");
+  
+  try {
+    const db = new Database(dbPath);
+    // 强制使用 better-sqlite3 执行同步查询
+    const rows = db.prepare(`
+      SELECT thread_id, checkpoint_id 
+      FROM checkpoints 
+      GROUP BY thread_id 
+      ORDER BY checkpoint_id DESC 
+      LIMIT 20
+    `).all() as any[];
+    
+    db.close();
+
+    return rows.map(r => ({
+      thread_id: r.thread_id,
+      updated_at: new Date().toISOString() // 暂时用当前时间，因为 metadata 是加密/序列化的
+    }));
+  } catch (err) {
+    return [];
+  }
+}
+
+export async function deleteSession(threadId: string): Promise<boolean> {
+  const envPath = process.env["OPENSHELL_DB_PATH"];
+  const dbPath = envPath || path.join(os.homedir(), ".openshell", "openshell.db");
+  
+  try {
+    const db = new Database(dbPath);
+    db.prepare("DELETE FROM checkpoints WHERE thread_id = ?").run(threadId);
+    db.prepare("DELETE FROM writes WHERE thread_id = ?").run(threadId);
+    db.close();
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 export async function createShellAgent(

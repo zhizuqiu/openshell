@@ -96,12 +96,13 @@ export async function main() {
   }
 
   // 生成或恢复会话 ID
-  const sessionId = argv.session || "s_" + Math.random().toString(36).substring(2, 8);
+  const sessionId =
+    argv.session || "s_" + Math.random().toString(36).substring(2, 8);
 
   // 创建应用程序配置对象
   const config = {
-    // 调试模式标志
-    debug: argv.debug || false,
+    // 调试模式标志（命令行 > 环境变量 > 默认值）
+    debug: argv.debug || process.env["OPENSHHELL_DEBUG"] === "true" || false,
     // 自主执行模式
     autoExecute: argv.autoExecute || false,
     // 应用程序版本
