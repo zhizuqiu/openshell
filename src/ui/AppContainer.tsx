@@ -209,12 +209,12 @@ export function AppContainer({ config }: AppContainerProps) {
         seenMessageIdsRef.current.clear();
         if (restoredMessages.length > 0) {
           setMessages([
-            ...restoredMessages,
             {
               role: Role.SYSTEM,
               content: `Switched to session: ${threadId}`,
               timestamp: new Date(),
             },
+            ...restoredMessages,
           ]);
           langChainMessages.forEach((m) => {
             const msgId = m.id || m.kwargs?.id;
