@@ -3,6 +3,7 @@ import { Box, Text, useApp, useStdin, Static } from "ink";
 import os from "os";
 import path from "path";
 import SelectInput from "ink-select-input";
+import { ToolApprovalInput } from "./ToolApprovalInput.js";
 import Spinner from "ink-spinner";
 import Gradient from "ink-gradient";
 import BigText from "ink-big-text";
@@ -1632,26 +1633,21 @@ export function AppContainer({ config }: AppContainerProps) {
         {/* 批量操作按钮 */}
         {pendingInterruptMessages.length > 1 && (
           <Box flexDirection="row" marginTop={1} marginBottom={1}>
-            <Box
-              marginRight={2}
-              width={Math.max((process.stdout.columns || 80) - 8, 40)}
-            >
-              <SelectInput
+            <Box marginRight={2}>
+              <ToolApprovalInput
                 items={[
                   {
                     label: t("hitl.approveAllLabel"),
-                    value: "approve-all",
+                    value: "approve",
                   },
                   {
                     label: t("hitl.rejectAllLabel"),
-                    value: "reject-all",
+                    value: "reject",
                   },
                 ]}
                 onSelect={(item) => {
-                  const decision =
-                    item.value === "approve-all" ? "approve" : "reject";
                   handleDecision(
-                    decision,
+                    item.value,
                     "",
                     firstInterrupt,
                     pendingInterruptMessages.length,
@@ -1694,21 +1690,14 @@ export function AppContainer({ config }: AppContainerProps) {
                     ?.allowed_decisions?.[0] ||
                   t("app.actionRequiresApproval")}
               </Text>
-              <Box
-                marginTop={1}
-                width={Math.max((process.stdout.columns || 80) - 8, 40)}
-              >
-                <SelectInput
+              <Box marginTop={1}>
+                <ToolApprovalInput
                   items={[
                     { label: t("hitl.approveLabel"), value: "approve" },
                     { label: t("hitl.rejectLabel"), value: "reject" },
                   ]}
                   onSelect={(item) =>
-                    handleDecision(
-                      item.value as "approve" | "reject",
-                      tc.id || "",
-                      tc.interrupt!,
-                    )
+                    handleDecision(item.value, tc.id || "", tc.interrupt!)
                   }
                 />
               </Box>
