@@ -1626,8 +1626,6 @@ export function AppContainer({ config }: AppContainerProps) {
     const submitDecisions = async (
       decisions: { type: "approve" | "reject"; message?: string }[],
     ) => {
-      console.log("[ToolApprovalDialog] Submitting decisions:", decisions);
-
       // 提交前先清除 interrupt 标记，让 Dialog 消失
       setMessages((prev) => {
         const next = [...prev];
@@ -1649,7 +1647,6 @@ export function AppContainer({ config }: AppContainerProps) {
       activeStreamsRef.current++;
       setIsProcessing(true);
       try {
-        console.log("[ToolApprovalDialog] Starting stream with resume...");
         const stream = await agent!.stream(
           new Command({
             resume: { decisions: decisions },
@@ -1659,11 +1656,8 @@ export function AppContainer({ config }: AppContainerProps) {
             configurable: { thread_id: activeSessionId },
           },
         );
-        console.log("[ToolApprovalDialog] Stream started, processing...");
         await processAiStream(stream, abortControllerRef.current!);
-        console.log("[ToolApprovalDialog] Stream processing completed");
       } catch (error) {
-        console.error("[ToolApprovalDialog] Error:", error);
         handleError(error);
       } finally {
         activeStreamsRef.current--;
