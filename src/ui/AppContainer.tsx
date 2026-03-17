@@ -619,7 +619,16 @@ export function AppContainer({ config }: AppContainerProps) {
       );
       const tc = block?.tool_calls?.find((t) => t.interrupt);
       if (tc && tc.interrupt) {
-        await handleDecision("reject", tc.id || "", tc.interrupt);
+        // 拒绝所有待处理的操作
+        const actionRequests =
+          tc.interrupt.value?.actionRequests ||
+          tc.interrupt.value?.action_requests ||
+          [];
+        const decisions = actionRequests.map(() => ({
+          type: "reject" as const,
+          message: "User cancelled",
+        }));
+        await runAgent({ decisions });
         return;
       }
     }
@@ -819,13 +828,10 @@ export function AppContainer({ config }: AppContainerProps) {
             tc.interrupt.value?.actionRequests ||
             tc.interrupt.value?.action_requests ||
             [];
-          const actionRequestsCount = actionRequests.length;
-          await handleDecision(
-            "approve",
-            tc.id || "",
-            tc.interrupt,
-            actionRequestsCount,
-          );
+          const decisions = actionRequests.map(() => ({
+            type: "approve" as const,
+          }));
+          await runAgent({ decisions });
           return;
         }
       }
@@ -843,35 +849,44 @@ export function AppContainer({ config }: AppContainerProps) {
     }
   };
 
-  const handleAiStream = async (cmd: string) => {
+  // 统一的 agent 调用入口：支持消息输入和决策恢复
+  const runAgent = async (input: {
+    messages?: Array<{ type: string; content: string }>;
+    decisions?: Array<{ type: "approve" | "reject"; message?: string }>;
+  }) => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
     cancelMessageAddedRef.current = false;
-    currentCommandRef.current = cmd;
     activeStreamsRef.current++;
     setIsProcessing(true);
     try {
-      setMessages((prev) => {
-        const next = [
-          ...prev,
-          {
-            role: Role.ASSISTANT,
-            content: [],
-            timestamp: new Date(),
-            streaming: true,
-          },
-        ];
-        currentAiMsgIndexRef.current = next.length - 1;
-        return next;
-      });
+      // 构建 stream input：messages 或 decisions 二选一
+      let streamInput: any;
+      if (input.decisions) {
+        streamInput = new Command({ resume: { decisions: input.decisions } });
+      } else {
+        streamInput = { messages: input.messages };
+        // 只在初始消息时创建新的 AI 消息占位
+        setMessages((prev) => {
+          const next = [
+            ...prev,
+            {
+              role: Role.ASSISTANT,
+              content: [],
+              timestamp: new Date(),
+              streaming: true,
+            },
+          ];
+          currentAiMsgIndexRef.current = next.length - 1;
+          return next;
+        });
+      }
+
       if (!agent) return;
-      const stream = await agent.stream(
-        { messages: [{ type: "human", content: cmd }] },
-        {
-          streamMode: "updates",
-          configurable: { thread_id: activeSessionId },
-        },
-      );
+      const stream = await agent.stream(streamInput, {
+        streamMode: "updates",
+        configurable: { thread_id: activeSessionId },
+      });
       currentStreamRef.current = stream;
       await processAiStream(stream, abortControllerRef.current);
       currentStreamRef.current = null;
@@ -885,6 +900,11 @@ export function AppContainer({ config }: AppContainerProps) {
       )
         setIsProcessing(false);
     }
+  };
+
+  const handleAiStream = async (cmd: string) => {
+    currentCommandRef.current = cmd;
+    await runAgent({ messages: [{ type: "human", content: cmd }] });
   };
 
   const processAiStream = async (
@@ -932,13 +952,11 @@ export function AppContainer({ config }: AppContainerProps) {
               interrupt.value?.actionRequests ||
               interrupt.value?.action_requests ||
               [];
-            const actionRequestsCount = actionRequests.length;
-            handleDecision(
-              "approve",
-              lastToolCallId || "",
-              interrupt,
-              actionRequestsCount,
-            );
+            const decisions = actionRequests.map(() => ({
+              type: "approve" as const,
+            }));
+            // 直接调用 runAgent 恢复，不经过 handleDecision
+            runAgent({ decisions });
             return;
           }
           setMessages((prev) => {
@@ -1097,73 +1115,6 @@ export function AppContainer({ config }: AppContainerProps) {
         }
       }
     } catch (e) {}
-  };
-
-  const handleDecision = async (
-    decision: "approve" | "reject",
-    toolId: string,
-    interrupt?: Interrupt,
-    actionRequestsCount?: number, // action_requests 的数量，用于构建 decisions 数组
-  ) => {
-    if (!agent || !interrupt) return;
-    activeStreamsRef.current++;
-    setIsProcessing(true);
-    try {
-      setMessages((prev) => {
-        const next = [...prev];
-        const aiIdx = [...next]
-          .reverse()
-          .findIndex((m) => m.role === Role.ASSISTANT);
-        if (aiIdx !== -1) {
-          const idx = next.length - 1 - aiIdx;
-          next[idx] = { ...next[idx], streaming: true };
-          currentAiMsgIndexRef.current = idx;
-        }
-        for (const msg of next) {
-          if (msg.role === Role.ASSISTANT && Array.isArray(msg.content)) {
-            for (const block of msg.content) {
-              if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                block.tool_calls.forEach((tc) => {
-                  if (tc.interrupt) delete tc.interrupt;
-                });
-              }
-            }
-          }
-        }
-        return next;
-      });
-
-      // 构建决策数组
-      // 根据 LangChain 文档，decisions 数组长度必须与 action_requests/actionRequests 长度匹配
-      let decisions: { type: string; message?: string }[] = [];
-
-      // LangChain JS 使用 actionRequests (camelCase), Python 使用 action_requests (snake_case)
-      const actionRequests =
-        interrupt.value?.actionRequests ||
-        interrupt.value?.action_requests ||
-        [];
-      const interruptActionCount = actionRequests.length;
-
-      // 使用传入的 actionRequestsCount 或从 interrupt 获取
-      const count = Math.max(interruptActionCount, actionRequestsCount || 0, 1);
-
-      // 为每个 action_request 生成一个决策
-      decisions = Array(count).fill({ type: decision });
-
-      const stream = await agent!.stream(
-        new Command({ resume: { decisions: decisions } }) as any,
-        {
-          streamMode: "updates",
-          configurable: { thread_id: activeSessionId },
-        },
-      );
-      await processAiStream(stream, abortControllerRef.current!);
-    } catch (error) {
-      handleError(error);
-    } finally {
-      activeStreamsRef.current--;
-      if (activeStreamsRef.current <= 0) setIsProcessing(false);
-    }
   };
 
   const handleError = (error: unknown) => {
@@ -1623,48 +1574,6 @@ export function AppContainer({ config }: AppContainerProps) {
     const firstInterrupt = pendingInterruptMessages[0]?.interrupt;
     if (!firstInterrupt) return null;
 
-    const submitDecisions = async (
-      decisions: { type: "approve" | "reject"; message?: string }[],
-    ) => {
-      // 提交前先清除 interrupt 标记，让 Dialog 消失
-      setMessages((prev) => {
-        const next = [...prev];
-        for (const msg of next) {
-          if (msg.role === Role.ASSISTANT && Array.isArray(msg.content)) {
-            for (const block of msg.content) {
-              if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                block.tool_calls.forEach((tc) => {
-                  if (tc.interrupt) delete tc.interrupt;
-                });
-              }
-            }
-          }
-        }
-        return next;
-      });
-
-      // 然后提交决策（使用 await 确保正确执行）
-      activeStreamsRef.current++;
-      setIsProcessing(true);
-      try {
-        const stream = await agent!.stream(
-          new Command({
-            resume: { decisions: decisions },
-          }) as any,
-          {
-            streamMode: "updates",
-            configurable: { thread_id: activeSessionId },
-          },
-        );
-        await processAiStream(stream, abortControllerRef.current!);
-      } catch (error) {
-        handleError(error);
-      } finally {
-        activeStreamsRef.current--;
-        if (activeStreamsRef.current <= 0) setIsProcessing(false);
-      }
-    };
-
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
         <Text color="yellow" bold>
@@ -1678,7 +1587,26 @@ export function AppContainer({ config }: AppContainerProps) {
         </Text>
         <ToolApprovalDialog
           interrupt={firstInterrupt}
-          onSubmit={submitDecisions}
+          onSubmit={async (decisions) => {
+            // 提交前先清除 interrupt 标记，让 Dialog 消失
+            setMessages((prev) => {
+              const next = [...prev];
+              for (const msg of next) {
+                if (msg.role === Role.ASSISTANT && Array.isArray(msg.content)) {
+                  for (const block of msg.content) {
+                    if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
+                      block.tool_calls.forEach((tc) => {
+                        if (tc.interrupt) delete tc.interrupt;
+                      });
+                    }
+                  }
+                }
+              }
+              return next;
+            });
+            // 使用统一的 runAgent 提交决策
+            await runAgent({ decisions });
+          }}
           onCancel={() => {
             // 取消审批：拒绝所有待处理的操作
             const actionRequestsCount =
@@ -1689,7 +1617,8 @@ export function AppContainer({ config }: AppContainerProps) {
               type: "reject",
               message: "User cancelled",
             });
-            submitDecisions(decisions);
+            // 使用统一的 runAgent 提交决策
+            runAgent({ decisions });
           }}
         />
       </Box>
