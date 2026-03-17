@@ -18,7 +18,7 @@ import { killAllProcesses } from "../core/ai/tools.js";
 import { getCommandManager } from "../core/session/command-manager.js";
 import { questionManager, type QuestionRequest } from "../core/question.js";
 import { AskUserDialog } from "./AskUserDialog.js";
-import { t } from "../i18n.js";
+import { t, getI18n } from "../i18n.js";
 import { MessageComponent } from "./MessageComponent.js";
 import type {
   AppContainerProps,
@@ -37,6 +37,11 @@ import type { ReactAgent } from "langchain";
 import { BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 
 export function AppContainer({ config }: AppContainerProps) {
+  // --- 初始化语言 ---
+  if (config.lang) {
+    getI18n().setLanguage(config.lang);
+  }
+
   // --- 布局常量 ---
   const mainWidth = "100%";
   const innerWidth = "100%";
@@ -192,7 +197,10 @@ export function AppContainer({ config }: AppContainerProps) {
                 // 根据 status 字段设置状态
                 if (parsed.status === "error" || parsed.status === "failed") {
                   status = ToolCallStatus.ERROR;
-                } else if (parsed.status === "canceled" || parsed.status === "cancelled") {
+                } else if (
+                  parsed.status === "canceled" ||
+                  parsed.status === "cancelled"
+                ) {
                   status = ToolCallStatus.CANCELED;
                 }
               }
@@ -205,7 +213,8 @@ export function AppContainer({ config }: AppContainerProps) {
                 resultContent.includes("取消");
               if (isRejected) {
                 status = ToolCallStatus.CANCELED;
-                resultStr = t("hitl.rejectedFeedback") || "Operation rejected by user.";
+                resultStr =
+                  t("hitl.rejectedFeedback") || "Operation rejected by user.";
               }
             }
 
@@ -940,7 +949,6 @@ export function AppContainer({ config }: AppContainerProps) {
     stream: AsyncIterable<Record<string, any>>,
     abortController: AbortController,
   ) => {
-    let lastToolCallId: string | null = null;
     let hasInterrupt = false;
     const aiMsgIndex = currentAiMsgIndexRef.current;
     try {
@@ -996,16 +1004,28 @@ export function AppContainer({ config }: AppContainerProps) {
             const assistantContent = Array.isArray(aiMsg.content)
               ? [...aiMsg.content]
               : [];
+
+            // 获取所有待审批的工具调用 ID
+            const actionRequests =
+              interrupt.value?.actionRequests ||
+              interrupt.value?.action_requests ||
+              [];
+            const pendingToolCallIds = new Set(
+              actionRequests.map((ar: any) => ar.id).filter(Boolean),
+            );
+
+            // 给所有待审批的 tool_calls 标记 interrupt
             for (const block of assistantContent) {
               if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                const tc = block.tool_calls.find(
-                  (t) =>
-                    !t.result &&
-                    (lastToolCallId ? t.id === lastToolCallId : true),
-                );
-                if (tc) {
-                  tc.interrupt = interrupt;
-                  break;
+                for (const tc of block.tool_calls) {
+                  // 如果 tool_call 在待审批列表中，或者没有 ID 列表时标记所有未完成的
+                  if (
+                    pendingToolCallIds.size > 0
+                      ? pendingToolCallIds.has(tc.id)
+                      : !tc.result
+                  ) {
+                    tc.interrupt = interrupt;
+                  }
                 }
               }
             }
@@ -1032,15 +1052,69 @@ export function AppContainer({ config }: AppContainerProps) {
             msgType === "assistant";
           const role = isTool ? "tool" : isAI ? "assistant" : msgType;
           if (role === "human" || role === "system") continue;
-          setMessages((prev) => {
-            const next = [...prev];
-            const idx = aiMsgIndex;
-            if (idx === -1) return prev;
-            const aiMsg = { ...next[idx] };
-            const assistantContent = Array.isArray(aiMsg.content)
-              ? [...aiMsg.content]
-              : [];
-            if (role === "assistant") {
+
+          if (role === "tool") {
+            const toolId =
+              msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
+
+            setMessages((prev) => {
+              const next = [...prev];
+              // 倒序查找，因为通常是更新最近的消息
+              for (let i = next.length - 1; i >= 0; i--) {
+                const m = next[i];
+                if (m.role === Role.ASSISTANT && Array.isArray(m.content)) {
+                  for (const block of m.content) {
+                    if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
+                      const tc = block.tool_calls.find((t) => t.id === toolId);
+                      if (tc) {
+                        // 解析结果
+                        try {
+                          const parsed = JSON.parse(content);
+                          if (
+                            parsed &&
+                            typeof parsed === "object" &&
+                            "status" in parsed
+                          ) {
+                            tc.status = parsed.status as ToolCallStatus;
+                            tc.result =
+                              parsed.output || parsed.result || content;
+                          } else {
+                            throw new Error("Not structured");
+                          }
+                        } catch {
+                          tc.result = content;
+                          const isRejected =
+                            content.includes("rejected") ||
+                            content.includes("cancelled") ||
+                            content.includes("拒绝") ||
+                            content.includes("取消");
+                          if (isRejected) {
+                            tc.status = ToolCallStatus.CANCELED;
+                            tc.result =
+                              t("hitl.rejectedFeedback") ||
+                              "Operation rejected by user.";
+                          } else {
+                            tc.status = ToolCallStatus.SUCCESS;
+                          }
+                        }
+                        return next;
+                      }
+                    }
+                  }
+                }
+              }
+              return next;
+            });
+          } else if (role === "assistant") {
+            setMessages((prev) => {
+              const next = [...prev];
+              const idx = aiMsgIndex;
+              if (idx === -1) return prev;
+              const aiMsg = { ...next[idx] };
+              const assistantContent = Array.isArray(aiMsg.content)
+                ? [...aiMsg.content]
+                : [];
+
               if (content) {
                 const lastTextBlock =
                   assistantContent[assistantContent.length - 1];
@@ -1058,76 +1132,55 @@ export function AppContainer({ config }: AppContainerProps) {
                 }
               }
               if (toolCalls && Array.isArray(toolCalls)) {
-                lastToolCallId = toolCalls[0]?.id || null;
-                const exists = assistantContent.some(
-                  (block) =>
-                    block.type === MsgType.TOOL_CALL &&
-                    block.tool_calls?.some((tc) => tc.id === lastToolCallId),
-                );
-                if (!exists) {
-                  assistantContent.push({
-                    type: MsgType.TOOL_CALL,
-                    tool_calls: toolCalls.map((tc) => ({
-                      id: tc.id || "",
-                      name: tc.name,
-                      args: tc.args,
-                      status: ToolCallStatus.EXECUTING,
-                    })),
-                  });
-                }
-              }
-            } else if (role === "tool") {
-              const toolId =
-                msg instanceof ToolMessage ? msg.tool_call_id : msg.id;
-              for (const block of assistantContent) {
-                if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
-                  const tc = block.tool_calls.find((t) => t.id === toolId);
-                  if (tc) {
-                    // 尝试解析结构化结果
-                    try {
-                      const parsed = JSON.parse(content);
-                      if (
-                        parsed &&
-                        typeof parsed === "object" &&
-                        "status" in parsed &&
-                        "output" in parsed
-                      ) {
-                        tc.result = parsed.output;
-                        tc.status = parsed.status as ToolCallStatus;
-                      } else {
-                        throw new Error("Not a structured result");
-                      }
-                    } catch {
-                      // 回退到正则猜测逻辑（用于非结构化输出）
-                      tc.result = content;
-                      const isRejected =
-                        content.includes("rejected") ||
-                        content.includes("cancelled") ||
-                        content.includes("拒绝") ||
-                        content.includes("取消");
-                      const isError =
-                        /Error[:\s]/i.test(content) ||
-                        content.toLowerCase().includes("failed") ||
-                        content.includes("ENOENT") ||
-                        content.includes("EACCES");
+                // 合并所有 tool_calls 到同一个 TOOL_CALL block 中
+                // 先收集所有新的 tool_call（之前没有出现过的）
+                const existingToolCallIds = new Set<string>();
+                assistantContent.forEach((block) => {
+                  if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
+                    block.tool_calls.forEach((tc) => {
+                      if (tc.id) existingToolCallIds.add(tc.id);
+                    });
+                  }
+                });
 
-                      if (isRejected) {
-                        tc.status = ToolCallStatus.CANCELED;
-                        tc.result = t("hitl.rejectedFeedback") || "Operation rejected by user.";
-                      } else if (isError) {
-                        tc.status = ToolCallStatus.ERROR;
-                      } else {
-                        tc.status = ToolCallStatus.SUCCESS;
-                      }
-                    }
+                const newToolCalls = toolCalls
+                  .filter((tc) => tc.id && !existingToolCallIds.has(tc.id))
+                  .map((tc) => ({
+                    id: tc.id || "",
+                    name: tc.name!,
+                    args: tc.args,
+                    status: ToolCallStatus.EXECUTING,
+                  }));
+
+                if (newToolCalls.length > 0) {
+                  // 查找现有的 TOOL_CALL block
+                  let toolCallBlock = assistantContent.find(
+                    (block) => block.type === MsgType.TOOL_CALL,
+                  );
+
+                  if (
+                    toolCallBlock &&
+                    toolCallBlock.type === MsgType.TOOL_CALL
+                  ) {
+                    // 合并到现有 block
+                    toolCallBlock.tool_calls = [
+                      ...(toolCallBlock.tool_calls || []),
+                      ...newToolCalls,
+                    ];
+                  } else {
+                    // 创建新的 TOOL_CALL block
+                    assistantContent.push({
+                      type: MsgType.TOOL_CALL,
+                      tool_calls: newToolCalls,
+                    });
                   }
                 }
               }
-            }
-            aiMsg.content = assistantContent;
-            next[idx] = aiMsg;
-            return next;
-          });
+              aiMsg.content = assistantContent;
+              next[idx] = aiMsg;
+              return next;
+            });
+          }
         }
       }
     } catch (e) {
@@ -1612,15 +1665,6 @@ export function AppContainer({ config }: AppContainerProps) {
 
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Text color="yellow" bold>
-          {t("app.reviewRequired", {
-            count: String(
-              firstInterrupt.value?.actionRequests?.length ||
-                firstInterrupt.value?.action_requests?.length ||
-                pendingInterruptMessages.length,
-            ),
-          })}
-        </Text>
         <ToolApprovalDialog
           interrupt={firstInterrupt}
           onSubmit={async (decisions) => {
@@ -1651,7 +1695,8 @@ export function AppContainer({ config }: AppContainerProps) {
               1;
             const decisions = Array(actionRequestsCount).fill({
               type: "reject",
-              message: "Operation rejected by user. Stop the current task and ask for next instructions.",
+              message:
+                "Operation rejected by user. Stop the current task and ask for next instructions.",
             });
             // 使用统一的 runAgent 提交决策
             runAgent({ decisions });
@@ -1677,7 +1722,11 @@ export function AppContainer({ config }: AppContainerProps) {
                 <BigText text="OpenShell" font="block" />
               </Gradient>
             )}
-            <Box marginTop={config.showBanner ? 1 : 0} flexDirection="row" gap={2}>
+            <Box
+              marginTop={config.showBanner ? 1 : 0}
+              flexDirection="row"
+              gap={2}
+            >
               <Box flexDirection="row" gap={1}>
                 <Text color="cyan" bold>
                   Enter

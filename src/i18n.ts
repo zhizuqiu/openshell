@@ -40,6 +40,10 @@ interface Translations {
     reviewRequired: string;
     autoExecuteError: string;
     actionRequiresApproval: string;
+    navigateLabel: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    rejectedFeedback: string;
   };
   help: {
     availableCommands: string;
@@ -80,6 +84,8 @@ interface Translations {
     rejectLabel: string;
     approveAllLabel: string;
     rejectAllLabel: string;
+    pendingActions: string;
+    rejectedFeedback: string;
   };
   tools: {
     readFileName: string;
@@ -137,6 +143,10 @@ const translations: Record<Language, Translations> = {
       reviewRequired: "需要审批（{{count}} 个操作）：",
       autoExecuteError: "错误：{{error}}",
       actionRequiresApproval: "操作需要审批",
+      navigateLabel: "导航",
+      confirmLabel: "确认",
+      cancelLabel: "取消",
+      rejectedFeedback: "操作已被用户拒绝。",
     },
     help: {
       availableCommands: "可用命令：",
@@ -180,6 +190,8 @@ const translations: Record<Language, Translations> = {
       rejectLabel: "拒绝",
       approveAllLabel: "全部批准",
       rejectAllLabel: "全部拒绝",
+      pendingActions: "个待处理的操作：",
+      rejectedFeedback: "操作已被用户拒绝。",
     },
     tools: {
       readFileName: "读取文件",
@@ -241,6 +253,10 @@ const translations: Record<Language, Translations> = {
       reviewRequired: "Review Required ({{count}} actions):",
       autoExecuteError: "Error: {{error}}",
       actionRequiresApproval: "Action requires approval",
+      navigateLabel: "Navigate",
+      confirmLabel: "Confirm",
+      cancelLabel: "Cancel",
+      rejectedFeedback: "Operation rejected by user.",
     },
     help: {
       availableCommands: "Available commands:",
@@ -285,6 +301,8 @@ const translations: Record<Language, Translations> = {
       rejectLabel: "Reject",
       approveAllLabel: "Approve All",
       rejectAllLabel: "Reject All",
+      pendingActions: "pending action(s):",
+      rejectedFeedback: "Operation rejected by user.",
     },
     tools: {
       readFileName: "Read File",
@@ -320,7 +338,7 @@ class I18n {
       this.currentLanguage = lang;
     } else {
       // Read from environment variable, default to en-US
-      const envLang = process.env["OPENSHHELL_LANG"];
+      const envLang = process.env["OPENSHELL_LANG"];
       this.currentLanguage = this.validateLanguage(envLang);
     }
   }
