@@ -1633,7 +1633,7 @@ export function AppContainer({ config }: AppContainerProps) {
         {/* 批量操作按钮 */}
         {pendingInterruptMessages.length > 1 && (
           <Box flexDirection="row" marginTop={1} marginBottom={1}>
-            <Box marginRight={2}>
+            <Box>
               <ToolApprovalInput
                 items={[
                   {
@@ -1671,7 +1671,6 @@ export function AppContainer({ config }: AppContainerProps) {
               borderStyle="round"
               borderColor="yellow"
               borderDimColor={true}
-              width={innerWidth}
             >
               <Text color="yellow" bold>
                 {index + 1}. {tc.name}

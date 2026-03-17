@@ -15,52 +15,51 @@ export const ToolApprovalInput: React.FC<{
   useInput((input, key) => {
     if (key.upArrow) {
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1));
+      return true;
     } else if (key.downArrow) {
       setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0));
+      return true;
     } else if (key.return) {
       onSelect(items[selectedIndex]!);
+      return true;
     } else if (input === "a" || input === "A") {
       const approveItem = items.find((i) => i.value === "approve");
       if (approveItem) onSelect(approveItem);
+      return true;
     } else if (input === "r" || input === "R") {
       const rejectItem = items.find((i) => i.value === "reject");
       if (rejectItem) onSelect(rejectItem);
+      return true;
     }
+    return false;
   });
 
   return (
     <Box flexDirection="column">
       {items.map((opt, i) => {
         const isFocused = i === selectedIndex;
-        const color =
-          opt.value === "approve"
-            ? isFocused
-              ? "green"
-              : "green"
-            : isFocused
-              ? "red"
-              : "red";
 
         return (
           <Box key={i} flexDirection="row">
             <Text color={isFocused ? "cyan" : "white"}>
               {isFocused ? "❯ " : "  "}
             </Text>
-            <Text color={color}>{opt.label}</Text>
-            {isFocused && (
-              <Text color="gray" dimColor>
-                {" "}
-                (Enter)
-              </Text>
-            )}
+            <Text
+              color={
+                opt.value === "approve"
+                  ? isFocused
+                    ? "green"
+                    : "green"
+                  : isFocused
+                    ? "red"
+                    : "red"
+              }
+            >
+              {opt.label}
+            </Text>
           </Box>
         );
       })}
-      <Box marginTop={1} flexDirection="row">
-        <Text color="gray" dimColor>
-          ↑/↓: Navigate | Enter: Select | A: Approve | R: Reject
-        </Text>
-      </Box>
     </Box>
   );
 };
