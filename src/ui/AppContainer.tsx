@@ -1150,8 +1150,8 @@ export function AppContainer({ config }: AppContainerProps) {
       // 为每个 action_request 生成一个决策
       decisions = Array(count).fill({ type: decision });
 
-      const stream = await agent.stream(
-        new Command({ resume: { [interrupt.id]: { decisions } } }) as any,
+      const stream = await agent!.stream(
+        new Command({ resume: { decisions } }) as any,
         {
           streamMode: "updates",
           configurable: { thread_id: activeSessionId },
@@ -1623,7 +1623,7 @@ export function AppContainer({ config }: AppContainerProps) {
     const firstInterrupt = pendingInterruptMessages[0]?.interrupt;
     if (!firstInterrupt) return null;
 
-    const submitDecisions = (
+    const submitDecisions = async (
       decisions: { type: "approve" | "reject"; message?: string }[],
     ) => {
       // 提交前先清除 interrupt 标记，让 Dialog 消失
@@ -1643,26 +1643,26 @@ export function AppContainer({ config }: AppContainerProps) {
         return next;
       });
 
-      // 然后提交决策
-      const interruptId = firstInterrupt.id;
+      // 然后提交决策（使用 await 确保正确执行）
       activeStreamsRef.current++;
       setIsProcessing(true);
-      agent
-        ?.stream(
+      try {
+        const stream = await agent!.stream(
           new Command({
-            resume: { [interruptId]: { decisions } },
+            resume: { decisions },
           }) as any,
           {
             streamMode: "updates",
             configurable: { thread_id: activeSessionId },
           },
-        )
-        .then((stream) => processAiStream(stream, abortControllerRef.current!))
-        .catch(handleError)
-        .finally(() => {
-          activeStreamsRef.current--;
-          if (activeStreamsRef.current <= 0) setIsProcessing(false);
-        });
+        );
+        await processAiStream(stream, abortControllerRef.current!);
+      } catch (error) {
+        handleError(error);
+      } finally {
+        activeStreamsRef.current--;
+        if (activeStreamsRef.current <= 0) setIsProcessing(false);
+      }
     };
 
     return (
