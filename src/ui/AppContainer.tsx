@@ -1632,29 +1632,27 @@ export function AppContainer({ config }: AppContainerProps) {
 
         {/* 批量操作按钮 */}
         {pendingInterruptMessages.length > 1 && (
-          <Box flexDirection="row" marginTop={1} marginBottom={1}>
-            <Box>
-              <ToolApprovalInput
-                items={[
-                  {
-                    label: t("hitl.approveAllLabel"),
-                    value: "approve",
-                  },
-                  {
-                    label: t("hitl.rejectAllLabel"),
-                    value: "reject",
-                  },
-                ]}
-                onSelect={(item) => {
-                  handleDecision(
-                    item.value,
-                    "",
-                    firstInterrupt,
-                    pendingInterruptMessages.length,
-                  );
-                }}
-              />
-            </Box>
+          <Box flexDirection="column" marginTop={1} marginBottom={1}>
+            <ToolApprovalInput
+              items={[
+                {
+                  label: t("hitl.approveAllLabel"),
+                  value: "approve",
+                },
+                {
+                  label: t("hitl.rejectAllLabel"),
+                  value: "reject",
+                },
+              ]}
+              onSelect={(item) => {
+                handleDecision(
+                  item.value,
+                  "",
+                  firstInterrupt,
+                  pendingInterruptMessages.length,
+                );
+              }}
+            />
           </Box>
         )}
 
@@ -1665,7 +1663,6 @@ export function AppContainer({ config }: AppContainerProps) {
             <Box
               key={tc.id || index}
               flexDirection="column"
-              marginLeft={2}
               marginTop={1}
               padding={1}
               borderStyle="round"
