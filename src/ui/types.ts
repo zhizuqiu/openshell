@@ -117,6 +117,7 @@ export enum DecisionType {
 export interface Config {
   debug: boolean;
   autoExecute: boolean;
+  showBanner: boolean;
   context?: string;
   namespace?: string;
   version: string;

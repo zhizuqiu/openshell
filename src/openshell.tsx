@@ -2,28 +2,6 @@
  * OpenShell 主应用程序
  */
 
-// 导入dotenv，用于加载环境变量
-import { config } from "dotenv";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-import os from "os";
-import fs from "fs";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// 确定优先级路径
-const localEnvPath = join(__dirname, "..", ".env");
-const homeOpenshellEnvPath = join(os.homedir(), ".config", "openshell", ".env");
-
-// 按优先级加载：
-// 1. 程序同级目录的 .env (适合本地开发)
-// 2. ~/.config/openshell/.env (适合全局安装，推荐)
-if (fs.existsSync(localEnvPath)) {
-  config({ path: localEnvPath, override: true, quiet: true });
-} else if (fs.existsSync(homeOpenshellEnvPath)) {
-  config({ path: homeOpenshellEnvPath, override: true, quiet: true });
-}
 // 从ink库导入render函数，用于渲染终端UI
 import { render } from "ink";
 // 导入yargs库，用于解析命令行参数
@@ -102,7 +80,7 @@ export async function main() {
   // 创建应用程序配置对象
   const config = {
     // 调试模式标志（命令行 > 环境变量 > 默认值）
-    debug: argv.debug || process.env["OPENSHHELL_DEBUG"] === "true" || false,
+    debug: argv.debug || process.env["OPENSHELL_DEBUG"] === "true" || false,
     // 自主执行模式
     autoExecute: argv.autoExecute || false,
     // 应用程序版本
@@ -110,7 +88,9 @@ export async function main() {
     // 用户查询内容
     query: query || undefined,
     // 语言配置
-    lang: (process.env["OPENSHHELL_LANG"] as "zh-CN" | "en-US") || "en-US",
+    lang: (process.env["OPENSHELL_LANG"] as "zh-CN" | "en-US") || "en-US",
+    // 是否展示大标题 (默认展示)
+    showBanner: process.env["OPENSHELL_SHOW_BANNER"] !== "false",
     // 会话 ID
     sessionId,
   };

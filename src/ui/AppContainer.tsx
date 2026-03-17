@@ -1672,10 +1672,12 @@ export function AppContainer({ config }: AppContainerProps) {
             alignItems="center"
             width="100%"
           >
-            <Gradient name="morning">
-              <BigText text="OpenShell" font="block" />
-            </Gradient>
-            <Box marginTop={1} flexDirection="row" gap={2}>
+            {config.showBanner && (
+              <Gradient name="morning">
+                <BigText text="OpenShell" font="block" />
+              </Gradient>
+            )}
+            <Box marginTop={config.showBanner ? 1 : 0} flexDirection="row" gap={2}>
               <Box flexDirection="row" gap={1}>
                 <Text color="cyan" bold>
                   Enter

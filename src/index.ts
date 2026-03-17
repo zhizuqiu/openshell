@@ -4,6 +4,31 @@
  * OpenShell CLI Entry Point
  */
 
+// 1. 初始化环境变量 (必须在所有业务 import 之前，防止某些模块在 top-level 读取 process.env)
+import { config } from "dotenv";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import os from "os";
+import fs from "fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// 优先级：~/.config/openshell/.env 为基础配置，项目根目录 .env 为覆盖配置
+const homeOpenshellEnvPath = join(os.homedir(), ".config", "openshell", ".env");
+const localEnvPath = join(__dirname, "..", ".env");
+
+// 先加载用户全局配置
+if (fs.existsSync(homeOpenshellEnvPath)) {
+  config({ path: homeOpenshellEnvPath, override: true, quiet: true });
+}
+
+// 再加载项目本地配置 (override: true 确保本地优先)
+if (fs.existsSync(localEnvPath)) {
+  config({ path: localEnvPath, override: true, quiet: true });
+}
+
+// 2. 导入业务逻辑
 import { main } from "./openshell.js";
 import { killAllProcesses } from "./core/ai/tools.js";
 import { getCommandManager } from "./core/session/command-manager.js";
