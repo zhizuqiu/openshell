@@ -192,10 +192,21 @@ export function AppContainer({ config }: AppContainerProps) {
                 // 根据 status 字段设置状态
                 if (parsed.status === "error" || parsed.status === "failed") {
                   status = ToolCallStatus.ERROR;
+                } else if (parsed.status === "canceled" || parsed.status === "cancelled") {
+                  status = ToolCallStatus.CANCELED;
                 }
               }
             } catch {
-              // 不是 JSON 格式，使用原始内容
+              // 不是 JSON 格式，执行启发式正则识别
+              const isRejected =
+                resultContent.includes("rejected") ||
+                resultContent.includes("cancelled") ||
+                resultContent.includes("拒绝") ||
+                resultContent.includes("取消");
+              if (isRejected) {
+                status = ToolCallStatus.CANCELED;
+                resultStr = t("hitl.rejectedFeedback") || "Operation rejected by user.";
+              }
             }
 
             if (resultStr.includes("Error") || resultStr.includes("failed")) {
@@ -416,7 +427,7 @@ export function AppContainer({ config }: AppContainerProps) {
     }
   };
 
-  const [autoExecute, setAutoExecute] = useState(true);
+  const [autoExecute, setAutoExecute] = useState(false);
   const [runningCommands, setRunningCommands] = useState(0);
   const queryExecutedRef = useRef(false);
   const activeStreamsRef = useRef(0);
@@ -626,7 +637,8 @@ export function AppContainer({ config }: AppContainerProps) {
           [];
         const decisions = actionRequests.map(() => ({
           type: "reject" as const,
-          message: "User cancelled",
+          message:
+            "Operation cancelled by user (ESC pressed). Stop and ask for instructions.",
         }));
         await runAgent({ decisions });
         return;
@@ -1088,18 +1100,25 @@ export function AppContainer({ config }: AppContainerProps) {
                     } catch {
                       // 回退到正则猜测逻辑（用于非结构化输出）
                       tc.result = content;
-                      const isCancelled = content.includes(
-                        "Command cancelled by user",
-                      );
+                      const isRejected =
+                        content.includes("rejected") ||
+                        content.includes("cancelled") ||
+                        content.includes("拒绝") ||
+                        content.includes("取消");
                       const isError =
                         /Error[:\s]/i.test(content) ||
                         content.toLowerCase().includes("failed") ||
                         content.includes("ENOENT") ||
                         content.includes("EACCES");
 
-                      if (isCancelled) tc.status = ToolCallStatus.CANCELED;
-                      else if (isError) tc.status = ToolCallStatus.ERROR;
-                      else tc.status = ToolCallStatus.SUCCESS;
+                      if (isRejected) {
+                        tc.status = ToolCallStatus.CANCELED;
+                        tc.result = t("hitl.rejectedFeedback") || "Operation rejected by user.";
+                      } else if (isError) {
+                        tc.status = ToolCallStatus.ERROR;
+                      } else {
+                        tc.status = ToolCallStatus.SUCCESS;
+                      }
                     }
                   }
                 }
@@ -1632,7 +1651,7 @@ export function AppContainer({ config }: AppContainerProps) {
               1;
             const decisions = Array(actionRequestsCount).fill({
               type: "reject",
-              message: "User cancelled",
+              message: "Operation rejected by user. Stop the current task and ask for next instructions.",
             });
             // 使用统一的 runAgent 提交决策
             runAgent({ decisions });

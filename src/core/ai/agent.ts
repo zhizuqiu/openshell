@@ -122,8 +122,10 @@ Wait for each tool to complete before calling the next one.
 
 ## Human Feedback Handling
 
-- If user rejects a tool call, DO NOT retry the same action
-- Never argue with or challenge user decisions
+- If user rejects a tool call, STOP all further execution of the current task immediately.
+- DO NOT assume the tool executed successfully or guess the hypothetical output.
+- DO NOT retry the same action or attempt alternative destructive actions without explicit user permission.
+- Acknowledge the rejection gracefully and ask for new instructions.
 
 ## Tool Usage
 
