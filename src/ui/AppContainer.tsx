@@ -1623,6 +1623,48 @@ export function AppContainer({ config }: AppContainerProps) {
     const firstInterrupt = pendingInterruptMessages[0]?.interrupt;
     if (!firstInterrupt) return null;
 
+    const submitDecisions = (
+      decisions: { type: "approve" | "reject"; message?: string }[],
+    ) => {
+      // 提交前先清除 interrupt 标记，让 Dialog 消失
+      setMessages((prev) => {
+        const next = [...prev];
+        for (const msg of next) {
+          if (msg.role === Role.ASSISTANT && Array.isArray(msg.content)) {
+            for (const block of msg.content) {
+              if (block.type === MsgType.TOOL_CALL && block.tool_calls) {
+                block.tool_calls.forEach((tc) => {
+                  if (tc.interrupt) delete tc.interrupt;
+                });
+              }
+            }
+          }
+        }
+        return next;
+      });
+
+      // 然后提交决策
+      const interruptId = firstInterrupt.id;
+      activeStreamsRef.current++;
+      setIsProcessing(true);
+      agent
+        ?.stream(
+          new Command({
+            resume: { [interruptId]: { decisions } },
+          }) as any,
+          {
+            streamMode: "updates",
+            configurable: { thread_id: activeSessionId },
+          },
+        )
+        .then((stream) => processAiStream(stream, abortControllerRef.current!))
+        .catch(handleError)
+        .finally(() => {
+          activeStreamsRef.current--;
+          if (activeStreamsRef.current <= 0) setIsProcessing(false);
+        });
+    };
+
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
         <Text color="yellow" bold>
@@ -1636,30 +1678,7 @@ export function AppContainer({ config }: AppContainerProps) {
         </Text>
         <ToolApprovalDialog
           interrupt={firstInterrupt}
-          onSubmit={(decisions) => {
-            // 提交所有决策
-            const interruptId = firstInterrupt.id;
-            activeStreamsRef.current++;
-            setIsProcessing(true);
-            agent
-              ?.stream(
-                new Command({
-                  resume: { [interruptId]: { decisions } },
-                }) as any,
-                {
-                  streamMode: "updates",
-                  configurable: { thread_id: activeSessionId },
-                },
-              )
-              .then((stream) =>
-                processAiStream(stream, abortControllerRef.current!),
-              )
-              .catch(handleError)
-              .finally(() => {
-                activeStreamsRef.current--;
-                if (activeStreamsRef.current <= 0) setIsProcessing(false);
-              });
-          }}
+          onSubmit={submitDecisions}
           onCancel={() => {
             // 取消审批：拒绝所有待处理的操作
             const actionRequestsCount =
@@ -1670,27 +1689,7 @@ export function AppContainer({ config }: AppContainerProps) {
               type: "reject",
               message: "User cancelled",
             });
-            const interruptId = firstInterrupt.id;
-            activeStreamsRef.current++;
-            setIsProcessing(true);
-            agent
-              ?.stream(
-                new Command({
-                  resume: { [interruptId]: { decisions } },
-                }) as any,
-                {
-                  streamMode: "updates",
-                  configurable: { thread_id: activeSessionId },
-                },
-              )
-              .then((stream) =>
-                processAiStream(stream, abortControllerRef.current!),
-              )
-              .catch(handleError)
-              .finally(() => {
-                activeStreamsRef.current--;
-                if (activeStreamsRef.current <= 0) setIsProcessing(false);
-              });
+            submitDecisions(decisions);
           }}
         />
       </Box>
