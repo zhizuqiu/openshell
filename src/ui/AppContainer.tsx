@@ -3,7 +3,7 @@ import { Box, Text, useApp, useStdin, Static } from "ink";
 import os from "os";
 import path from "path";
 import SelectInput from "ink-select-input";
-import { ToolApprovalInput } from "./ToolApprovalInput.js";
+import { ToolApprovalDialog } from "./ToolApprovalDialog.js";
 import Spinner from "ink-spinner";
 import Gradient from "ink-gradient";
 import BigText from "ink-big-text";
@@ -1621,85 +1621,78 @@ export function AppContainer({ config }: AppContainerProps) {
 
     // 获取所有待确认的工具调用的 interrupt（它们共享同一个 interrupt）
     const firstInterrupt = pendingInterruptMessages[0]?.interrupt;
+    if (!firstInterrupt) return null;
 
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
         <Text color="yellow" bold>
           {t("app.reviewRequired", {
-            count: String(pendingInterruptMessages.length),
+            count: String(
+              firstInterrupt.value?.actionRequests?.length ||
+                firstInterrupt.value?.action_requests?.length ||
+                pendingInterruptMessages.length,
+            ),
           })}
         </Text>
-
-        {/* 批量操作按钮 */}
-        {pendingInterruptMessages.length > 1 && (
-          <Box flexDirection="column" marginTop={1} marginBottom={1}>
-            <ToolApprovalInput
-              items={[
+        <ToolApprovalDialog
+          interrupt={firstInterrupt}
+          onSubmit={(decisions) => {
+            // 提交所有决策
+            const interruptId = firstInterrupt.id;
+            activeStreamsRef.current++;
+            setIsProcessing(true);
+            agent
+              ?.stream(
+                new Command({
+                  resume: { [interruptId]: { decisions } },
+                }) as any,
                 {
-                  label: t("hitl.approveAllLabel"),
-                  value: "approve",
+                  streamMode: "updates",
+                  configurable: { thread_id: activeSessionId },
                 },
+              )
+              .then((stream) =>
+                processAiStream(stream, abortControllerRef.current!),
+              )
+              .catch(handleError)
+              .finally(() => {
+                activeStreamsRef.current--;
+                if (activeStreamsRef.current <= 0) setIsProcessing(false);
+              });
+          }}
+          onCancel={() => {
+            // 取消审批：拒绝所有待处理的操作
+            const actionRequestsCount =
+              firstInterrupt.value?.actionRequests?.length ||
+              firstInterrupt.value?.action_requests?.length ||
+              1;
+            const decisions = Array(actionRequestsCount).fill({
+              type: "reject",
+              message: "User cancelled",
+            });
+            const interruptId = firstInterrupt.id;
+            activeStreamsRef.current++;
+            setIsProcessing(true);
+            agent
+              ?.stream(
+                new Command({
+                  resume: { [interruptId]: { decisions } },
+                }) as any,
                 {
-                  label: t("hitl.rejectAllLabel"),
-                  value: "reject",
+                  streamMode: "updates",
+                  configurable: { thread_id: activeSessionId },
                 },
-              ]}
-              onSelect={(item) => {
-                handleDecision(
-                  item.value,
-                  "",
-                  firstInterrupt,
-                  pendingInterruptMessages.length,
-                );
-              }}
-            />
-          </Box>
-        )}
-
-        {/* 单个工具确认列表 */}
-        {pendingInterruptMessages.map((tc, index) => {
-          if (!tc.interrupt) return null;
-          return (
-            <Box
-              key={tc.id || index}
-              flexDirection="column"
-              marginTop={1}
-              padding={1}
-              borderStyle="round"
-              borderColor="yellow"
-              borderDimColor={true}
-            >
-              <Text color="yellow" bold>
-                {index + 1}. {tc.name}
-              </Text>
-              <Text dimColor wrap="wrap">
-                {Object.entries(tc.args)
-                  .map(([k, v]) => `${k}: ${v}`)
-                  .join(", ")}
-              </Text>
-              <Text color="yellow" dimColor wrap="wrap">
-                {tc.interrupt.value?.actionRequests?.[0]?.description ||
-                  tc.interrupt.value?.action_requests?.[0]?.description ||
-                  tc.interrupt.value?.reviewConfigs?.[0]
-                    ?.allowed_decisions?.[0] ||
-                  tc.interrupt.value?.review_configs?.[0]
-                    ?.allowed_decisions?.[0] ||
-                  t("app.actionRequiresApproval")}
-              </Text>
-              <Box marginTop={1}>
-                <ToolApprovalInput
-                  items={[
-                    { label: t("hitl.approveLabel"), value: "approve" },
-                    { label: t("hitl.rejectLabel"), value: "reject" },
-                  ]}
-                  onSelect={(item) =>
-                    handleDecision(item.value, tc.id || "", tc.interrupt!)
-                  }
-                />
-              </Box>
-            </Box>
-          );
-        })}
+              )
+              .then((stream) =>
+                processAiStream(stream, abortControllerRef.current!),
+              )
+              .catch(handleError)
+              .finally(() => {
+                activeStreamsRef.current--;
+                if (activeStreamsRef.current <= 0) setIsProcessing(false);
+              });
+          }}
+        />
       </Box>
     );
   };
