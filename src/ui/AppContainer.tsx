@@ -864,6 +864,23 @@ export function AppContainer({ config }: AppContainerProps) {
       let streamInput: any;
       if (input.decisions) {
         streamInput = new Command({ resume: { decisions: input.decisions } });
+        // 恢复时：找到最后一个 AI 消息作为更新目标
+        setMessages((prev) => {
+          const aiIdx = [...prev]
+            .reverse()
+            .findIndex((m) => m.role === Role.ASSISTANT);
+          if (aiIdx !== -1) {
+            currentAiMsgIndexRef.current = prev.length - 1 - aiIdx;
+            // 重新设置 streaming 状态
+            const next = [...prev];
+            next[currentAiMsgIndexRef.current] = {
+              ...next[currentAiMsgIndexRef.current],
+              streaming: true,
+            };
+            return next;
+          }
+          return prev;
+        });
       } else {
         streamInput = { messages: input.messages };
         // 只在初始消息时创建新的 AI 消息占位
