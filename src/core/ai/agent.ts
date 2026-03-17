@@ -123,8 +123,6 @@ Wait for each tool to complete before calling the next one.
 ## Human Feedback Handling
 
 - If user rejects a tool call, DO NOT retry the same action
-- Accept the rejection and propose alternative approaches
-- Ask user for clarification if the request is ambiguous
 - Never argue with or challenge user decisions
 
 ## Tool Usage
