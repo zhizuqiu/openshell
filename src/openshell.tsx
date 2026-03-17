@@ -81,8 +81,11 @@ export async function main() {
   const config = {
     // 调试模式标志（命令行 > 环境变量 > 默认值）
     debug: argv.debug || process.env["OPENSHELL_DEBUG"] === "true" || false,
-    // 自主执行模式
-    autoExecute: argv.autoExecute || false,
+    // 自主执行模式（命令行 > 环境变量 > 默认值）
+    autoExecute:
+      argv.autoExecute ||
+      process.env["OPENSHELL_AUTO_EXECUTE"] === "true" ||
+      false,
     // 应用程序版本
     version: getVersion(),
     // 用户查询内容

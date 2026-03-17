@@ -169,21 +169,23 @@ src/
 
 ### Environment Variables (.env or ~/.config/openshell/.env)
 
-| Variable                  | Required | Default                     |
-| ------------------------- | -------- | --------------------------- |
-| `OPENAI_API_KEY`          | Yes      | -                           |
-| `OPENAI_API_MODEL`        | No       | `gpt-4o`                    |
-| `OPENAI_BASE_URL`         | No       | `https://api.openai.com/v1` |
-| `OPENSHHELL_LANG`         | No       | `en-US`                     |
-| `OPENSHHELL_DEBUG`        | No       | `false`                     |
-| `OPENSHHELL_AUTO_EXECUTE` | No       | `false`                     |
+| Variable                 | Required | Default                     |
+| ------------------------ | -------- | --------------------------- |
+| `OPENAI_API_KEY`         | Yes      | -                           |
+| `OPENAI_API_MODEL`       | No       | `gpt-4o`                    |
+| `OPENAI_BASE_URL`        | No       | `https://api.openai.com/v1` |
+| `OPENSHELL_LANG`         | No       | `en-US`                     |
+| `OPENSHELL_DEBUG`        | No       | `false`                     |
+| `OPENSHELL_AUTO_EXECUTE` | No       | `false`                     |
+| `OPENSHELL_SHOW_BANNER`  | No       | `true`                      |
+| `OPENSHELL_DB_PATH`      | No       | `~/.openshell/openshell.db` |
 
 **Example** (`~/.config/openshell/.env`):
 
 ```bash
 OPENAI_API_KEY=sk-...
 OPENAI_API_MODEL=gpt-4o
-OPENSHHELL_DEBUG=true
+OPENSHELL_DEBUG=true
 ```
 
 ## 🚀 Publish to npm

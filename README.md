@@ -64,16 +64,20 @@ OpenShell supports two configuration methods: **Environment Variables** and **Co
 
 ### Environment Variables
 
-| Variable           | Required | Description                         | Default                     |
-| :----------------- | :------- | :---------------------------------- | :-------------------------- |
-| `OPENAI_API_KEY`   | **Yes**  | AI model API Key                    | -                           |
-| `OPENAI_API_MODEL` | No       | Model name (e.g., qwen-max, gpt-4o) | `gpt-4o`                    |
-| `OPENAI_BASE_URL`  | No       | Custom provider endpoint            | `https://api.openai.com/v1` |
-| `OPENSHHELL_LANG`  | No       | UI language (`zh-CN` or `en-US`)    | `en-US`                     |
+| Variable                 | Required | Description                                  | Default                     |
+| :----------------------- | :------- | :------------------------------------------- | :-------------------------- |
+| `OPENAI_API_KEY`         | **Yes**  | AI model API Key                             | -                           |
+| `OPENAI_API_MODEL`       | No       | Model name (e.g., qwen-max, gpt-4o)          | `gpt-4o`                    |
+| `OPENAI_BASE_URL`        | No       | Custom provider endpoint                     | `https://api.openai.com/v1` |
+| `OPENSHELL_LANG`         | No       | UI language (`zh-CN` or `en-US`)             | `en-US`                     |
+| `OPENSHELL_DEBUG`        | No       | Enable debug mode (`true` or `false`)        | `false`                     |
+| `OPENSHELL_AUTO_EXECUTE` | No       | Enable auto-execute mode (`true` or `false`) | `false`                     |
+| `OPENSHELL_SHOW_BANNER`  | No       | Show startup banner (`true` or `false`)      | `true`                      |
+| `OPENSHELL_DB_PATH`      | No       | SQLite database path for sessions            | `~/.openshell/openshell.db` |
 
 ### Configuration File
 
-OpenShell reads configuration from `.env` files in the following order (first match wins):
+OpenShell reads configuration from `.env` files in the following order (later files override earlier):
 
 1. `~/.config/openshell/.env` (Global config, recommended)
 2. `./.env` (Project-level config)
@@ -101,7 +105,13 @@ OPENAI_API_MODEL=gpt-4o
 OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Optional: UI language (zh-CN or en-US, default: en-US)
-OPENSHHELL_LANG=en-US
+OPENSHELL_LANG=en-US
+
+# Optional: Enable auto-execute mode (default: false)
+OPENSHELL_AUTO_EXECUTE=false
+
+# Optional: Enable debug mode (default: false)
+OPENSHELL_DEBUG=false
 ```
 
 ## 🕹️ Controls

@@ -56,7 +56,7 @@ export function AppContainer({ config }: AppContainerProps) {
     useState<QuestionRequest | null>(null);
   const [currentDir] = useState(process.cwd());
   const [modelName, setModelName] = useState(
-    process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo",
+    process.env["OPENAI_API_MODEL"] || "gpt-4o",
   );
 
   // Session 管理相关状态
@@ -521,7 +521,7 @@ export function AppContainer({ config }: AppContainerProps) {
       try {
         const apiKey = process.env["OPENAI_API_KEY"];
         const baseURL = process.env["OPENAI_BASE_URL"];
-        const model = process.env["OPENAI_API_MODEL"] || "gpt-3.5-turbo";
+        const model = process.env["OPENAI_API_MODEL"] || "gpt-4o";
 
         if (!apiKey || !baseURL) {
           setMessages([
@@ -1895,11 +1895,8 @@ export function AppContainer({ config }: AppContainerProps) {
                         </Box>
                       )
                     ) : inputValue.length === 0 ? (
-                      <Text>
-                        <Text inverse>T</Text>
-                        <Text dimColor>
-                          ype your message or ! for shell mode
-                        </Text>
+                      <Text color="#888888">
+                        Type message, ! for shell, / for commands
                       </Text>
                     ) : (
                       <Text wrap="wrap">

@@ -64,16 +64,20 @@ OpenShell 支持两种配置方式：**环境变量**和**配置文件**。
 
 ### 环境变量
 
-| 变量名             | 必选   | 描述                           | 默认值                      |
-| :----------------- | :----- | :----------------------------- | :-------------------------- |
-| `OPENAI_API_KEY`   | **是** | AI 模型 API Key                | -                           |
-| `OPENAI_API_MODEL` | 否     | 模型名称 (如 qwen-max, gpt-4o) | `gpt-4o`                    |
-| `OPENAI_BASE_URL`  | 否     | 自定义提供商接口地址           | `https://api.openai.com/v1` |
-| `OPENSHHELL_LANG`  | 否     | UI 语言 (`zh-CN` 或 `en-US`)   | `en-US`                     |
+| 变量名                   | 必选   | 描述                                 | 默认值                      |
+| :----------------------- | :----- | :----------------------------------- | :-------------------------- |
+| `OPENAI_API_KEY`         | **是** | AI 模型 API Key                      | -                           |
+| `OPENAI_API_MODEL`       | 否     | 模型名称 (如 qwen-max, gpt-4o)       | `gpt-4o`                    |
+| `OPENAI_BASE_URL`        | 否     | 自定义提供商接口地址                 | `https://api.openai.com/v1` |
+| `OPENSHELL_LANG`         | 否     | UI 语言 (`zh-CN` 或 `en-US`)         | `en-US`                     |
+| `OPENSHELL_DEBUG`        | 否     | 启用调试模式 (`true` 或 `false`)     | `false`                     |
+| `OPENSHELL_AUTO_EXECUTE` | 否     | 启用自主执行模式 (`true` 或 `false`) | `false`                     |
+| `OPENSHELL_SHOW_BANNER`  | 否     | 显示启动横幅 (`true` 或 `false`)     | `true`                      |
+| `OPENSHELL_DB_PATH`      | 否     | 会话 SQLite 数据库路径               | `~/.openshell/openshell.db` |
 
 ### 配置文件
 
-OpenShell 按以下顺序读取 `.env` 配置文件（优先使用第一个匹配项）：
+OpenShell 按以下顺序读取 `.env` 配置文件（后加载的覆盖先加载的）：
 
 1. `~/.config/openshell/.env`（全局配置，推荐）
 2. `./.env`（项目级配置）
@@ -101,7 +105,13 @@ OPENAI_API_MODEL=gpt-4o
 OPENAI_BASE_URL=https://api.openai.com/v1
 
 # 可选：UI 语言（zh-CN 或 en-US，默认：en-US）
-OPENSHHELL_LANG=zh-CN
+OPENSHELL_LANG=zh-CN
+
+# 可选：启用自主执行模式（默认：false）
+OPENSHELL_AUTO_EXECUTE=false
+
+# 可选：启用调试模式（默认：false）
+OPENSHELL_DEBUG=false
 ```
 
 ## 🕹️ 交互方式
