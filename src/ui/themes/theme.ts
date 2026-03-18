@@ -5,9 +5,6 @@ import {
   type TerminalBackground,
 } from "../../core/terminal/index.js";
 
-export type ThemeType = "dark" | "light" | "auto";
-
-let currentTheme: ThemeType = "auto";
 let detectedBackground: TerminalBackground | null = null;
 
 export function setDetectedBackground(bg: TerminalBackground | null): void {
@@ -15,25 +12,18 @@ export function setDetectedBackground(bg: TerminalBackground | null): void {
 }
 
 export function getTheme(): "dark" | "light" {
-  if (currentTheme === "auto") {
-    if (detectedBackground) {
-      return detectedBackground;
-    }
-    return getTerminalBackground();
+  if (detectedBackground) {
+    return detectedBackground;
   }
-  return currentTheme;
-}
-
-export function setTheme(theme: ThemeType): void {
-  currentTheme = theme;
+  return getTerminalBackground();
 }
 
 export function getThemeColors(): ThemeColors {
   const theme = getTheme();
   const colors = theme === "light" ? LIGHT_THEME : DARK_THEME;
-  
+
   const terminalBg = getTerminalBackgroundHex();
-  
+
   return {
     ...colors,
     terminalBackground: terminalBg,
