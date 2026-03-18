@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
+import { getThemeColors } from "../themes/index.js";
 
 export interface InputBoxProps {
   mode: "agent" | "shell";
@@ -17,16 +18,20 @@ export function InputBox({
   cursorPosition,
   placeholder = "Type message, ! for shell, / for commands",
 }: InputBoxProps): React.ReactElement {
+  const colors = getThemeColors();
+
   const borderColor = isProcessing
-    ? "gray"
+    ? colors.promptProcessing
     : mode === "shell"
-      ? "green"
-      : "cyan";
+      ? colors.promptShell
+      : colors.promptAgent;
+
   const promptColor = isProcessing
-    ? "gray"
+    ? colors.promptProcessing
     : mode === "shell"
-      ? "green"
-      : "cyan";
+      ? colors.promptShell
+      : colors.promptAgent;
+
   const prompt = mode === "shell" ? "! " : "> ";
 
   return (
@@ -36,6 +41,7 @@ export function InputBox({
       borderStyle="round"
       borderColor={borderColor}
       borderDimColor={true}
+      backgroundColor={colors.inputBackground}
       alignItems="flex-start"
       width="100%"
     >

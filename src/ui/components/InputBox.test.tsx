@@ -8,6 +8,16 @@ vi.mock("ink-spinner", () => ({
   default: () => React.createElement(Text, null, "..."),
 }));
 
+vi.mock("../themes/index.js", () => ({
+  getThemeColors: () => ({
+    inputBackground: "#5F5F5F",
+    inputBorder: "#4a4a4a",
+    promptAgent: "#87AFFF",
+    promptShell: "#D7FFD7",
+    promptProcessing: "#878787",
+  }),
+}));
+
 describe("InputBox", () => {
   it("should render placeholder when input is empty", () => {
     const { lastFrame } = render(
