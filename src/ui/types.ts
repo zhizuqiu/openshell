@@ -52,8 +52,7 @@ export enum ToolCallStatus {
 export interface ToolCall {
   name: string;
   args: {
-    // 允许其他属性
-    [key: string]: any;
+    [key: string]: unknown;
   };
   id?: string;
   type?: string;
@@ -63,13 +62,13 @@ export interface ToolCall {
   status?: ToolCallStatus;
 }
 
-// 接口中 Interrupt 定义
 interface ActionRequest {
+  id?: string;
   name: string;
   args: {
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  description: string;
+  description?: string;
 }
 
 interface ReviewConfig {
@@ -103,9 +102,7 @@ export interface DecisionObject {
 // 决策项类型定义
 export interface DecisionItem {
   type: DecisionType;
-
-  // 可能还有其他字段，如备注、时间等
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export enum DecisionType {
@@ -133,15 +130,15 @@ export interface AppContainerProps {
 
 export interface LangGraphMessage {
   type: string;
-  content: string | any;
+  content: string | unknown;
   id?: string;
   tool_call_id?: string;
   kwargs?: {
     content?: string;
-    tool_calls?: any[];
+    tool_calls?: unknown[];
     tool_call_id?: string;
   };
-  tool_calls?: any[];
+  tool_calls?: unknown[];
 }
 
 export interface LangGraphChunk {

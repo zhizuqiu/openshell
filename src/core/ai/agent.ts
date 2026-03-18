@@ -67,15 +67,15 @@ export async function listAllSessions(): Promise<
       LIMIT 20
     `,
       )
-      .all() as any[];
+      .all() as { thread_id: string }[];
 
     db.close();
 
     return rows.map((r) => ({
       thread_id: r.thread_id,
-      updated_at: new Date().toISOString(), // 暂时用当前时间，因为 metadata 是加密/序列化的
+      updated_at: new Date().toISOString(),
     }));
-  } catch (err) {
+  } catch {
     return [];
   }
 }
@@ -91,7 +91,7 @@ export async function deleteSession(threadId: string): Promise<boolean> {
     db.prepare("DELETE FROM writes WHERE thread_id = ?").run(threadId);
     db.close();
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }

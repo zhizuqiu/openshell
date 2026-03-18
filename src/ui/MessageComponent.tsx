@@ -27,7 +27,7 @@ function truncateResult(result: string) {
 function renderToolCallItem(
   toolCall: ToolCall,
   index: number,
-  isStreaming?: boolean,
+  _isStreaming?: boolean,
 ) {
   const { name, args, result, id, interrupt, status } = toolCall;
   const argsString = JSON.stringify(args);
@@ -39,8 +39,8 @@ function renderToolCallItem(
 
   let statusIcon = <Text color="blue">●</Text>;
   let borderColor = "white";
-  let isCancelled = status === ToolCallStatus.CANCELED;
-  let isError = status === ToolCallStatus.ERROR;
+  const isCancelled = status === ToolCallStatus.CANCELED;
+  const isError = status === ToolCallStatus.ERROR;
 
   switch (status) {
     case ToolCallStatus.EXECUTING:

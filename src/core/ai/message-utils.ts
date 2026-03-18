@@ -6,6 +6,7 @@ import {
   ToolCallStatus,
 } from "../../ui/types.js";
 import { t } from "../../i18n.js";
+import type { ActionRequest } from "langchain";
 
 interface ProcessedMessage {
   role: Role;
@@ -18,28 +19,69 @@ interface ToolResult {
   status: ToolCallStatus;
 }
 
+interface RawMessage {
+  kwargs?: {
+    type?: string;
+    content?: string;
+    tool_calls?: RawToolCall[];
+    tool_call_id?: string;
+    additional_kwargs?: {
+      timestamp?: number;
+    };
+    id?: string | string[];
+    _getType?: () => string;
+  };
+  type?: string;
+  id?: string | string[];
+  content?: string;
+  tool_calls?: RawToolCall[];
+  tool_call_id?: string;
+  additional_kwargs?: {
+    timestamp?: number;
+  };
+  _getType?: () => string;
+}
+
+interface RawToolCall {
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+  result?: string;
+  status?: ToolCallStatus;
+  function?: {
+    id?: string;
+    name?: string;
+    arguments?: Record<string, unknown>;
+  };
+}
+
+function getRawMessage(m: BaseMessage): RawMessage {
+  return m as unknown as RawMessage;
+}
+
 export function parseToolResults(
   langChainMessages: BaseMessage[],
 ): Map<string, ToolResult> {
   const toolResults = new Map<string, ToolResult>();
 
   for (const m of langChainMessages) {
-    const kwargs = (m as any).kwargs || m;
+    const raw = getRawMessage(m);
+    const kwargs = raw.kwargs || raw;
     const type =
-      (m as any).type ||
+      raw.type ||
       kwargs.type ||
-      (typeof (m as any)._getType === "function"
-        ? (m as any)._getType()
+      (typeof raw._getType === "function"
+        ? raw._getType()
         : kwargs._getType?.());
 
     const isTool =
       type === "tool" ||
-      (m as any).id?.[2] === "ToolMessage" ||
-      kwargs.id?.[2] === "ToolMessage";
+      (raw.id && Array.isArray(raw.id) && raw.id[2] === "ToolMessage") ||
+      (kwargs.id && Array.isArray(kwargs.id) && kwargs.id[2] === "ToolMessage");
 
     if (isTool) {
-      const toolCallId = (m as any).tool_call_id || kwargs.tool_call_id;
-      const resultContent = (m as any).content ?? kwargs.content ?? "";
+      const toolCallId = raw.tool_call_id || kwargs.tool_call_id;
+      const resultContent = raw.content ?? kwargs.content ?? "";
 
       let resultStr = String(resultContent);
       let status = ToolCallStatus.SUCCESS;
@@ -91,18 +133,17 @@ export function convertLangChainMessage(
   m: BaseMessage,
   toolResults: Map<string, ToolResult>,
 ): ProcessedMessage | null {
-  const kwargs = (m as any).kwargs || m;
+  const raw = getRawMessage(m);
+  const kwargs = raw.kwargs || raw;
   const type =
-    (m as any).type ||
+    raw.type ||
     kwargs.type ||
-    (typeof (m as any)._getType === "function"
-      ? (m as any)._getType()
-      : kwargs._getType?.());
+    (typeof raw._getType === "function" ? raw._getType() : kwargs._getType?.());
 
   const isTool =
     type === "tool" ||
-    (m as any).id?.[2] === "ToolMessage" ||
-    kwargs.id?.[2] === "ToolMessage";
+    (raw.id && Array.isArray(raw.id) && raw.id[2] === "ToolMessage") ||
+    (kwargs.id && Array.isArray(kwargs.id) && kwargs.id[2] === "ToolMessage");
 
   if (isTool) return null;
 
@@ -110,32 +151,27 @@ export function convertLangChainMessage(
   if (
     type === "human" ||
     type === "user" ||
-    ((m as any).id &&
-      Array.isArray((m as any).id) &&
-      (m as any).id[2] === "HumanMessage")
+    (raw.id && Array.isArray(raw.id) && raw.id[2] === "HumanMessage")
   ) {
     role = Role.USER;
   } else if (
     type === "system" ||
-    ((m as any).id &&
-      Array.isArray((m as any).id) &&
-      (m as any).id[2] === "SystemMessage")
+    (raw.id && Array.isArray(raw.id) && raw.id[2] === "SystemMessage")
   ) {
     role = Role.SYSTEM;
   } else if (
     type === "ai" ||
-    ((m as any).id &&
-      Array.isArray((m as any).id) &&
-      ((m as any).id[2] === "AIMessage" ||
-        (m as any).id[2] === "AIMessageChunk"))
+    (raw.id &&
+      Array.isArray(raw.id) &&
+      (raw.id[2] === "AIMessage" || raw.id[2] === "AIMessageChunk"))
   ) {
     role = Role.ASSISTANT;
   }
 
   let content: string | AssistantMessage[] =
-    (m as any).content ?? kwargs.content;
+    raw.content ?? kwargs.content ?? "";
   const timestamp =
-    (m as any).additional_kwargs?.timestamp ||
+    raw.additional_kwargs?.timestamp ||
     kwargs.additional_kwargs?.timestamp ||
     Date.now();
 
@@ -143,14 +179,17 @@ export function convertLangChainMessage(
     const assistantContent: AssistantMessage[] = [];
 
     const toolCalls =
-      (m as any).tool_calls ||
+      raw.tool_calls ||
       kwargs.tool_calls ||
-      (m as any).kwargs?.tool_calls ||
-      (m as any).kwargs?.kwargs?.tool_calls ||
+      (raw.kwargs &&
+      typeof raw.kwargs === "object" &&
+      "tool_calls" in raw.kwargs
+        ? (raw.kwargs as { tool_calls?: RawToolCall[] }).tool_calls
+        : undefined) ||
       [];
 
     if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-      const formattedToolCalls: ToolCall[] = toolCalls.map((tc: any) => {
+      const formattedToolCalls: ToolCall[] = toolCalls.map((tc) => {
         const tcId = tc.id || "";
         const toolResult = toolResults.get(tcId);
         return {
@@ -179,11 +218,11 @@ export function convertLangChainMessage(
               assistantContent.push(...(parsed as AssistantMessage[]));
             } else {
               const hasToolCalls = parsed.some(
-                (item) => item.name || item.function || item.id,
+                (item: RawToolCall) => item.name || item.function || item.id,
               );
               if (hasToolCalls) {
                 const formattedOldFormat: ToolCall[] = parsed.map(
-                  (tc: any) => ({
+                  (tc: RawToolCall) => ({
                     id: tc.id || tc.function?.id || "",
                     name: tc.name || tc.function?.name || "unknown",
                     args: tc.args || tc.function?.arguments || {},
@@ -245,3 +284,5 @@ export function formatSessionMessages(
       timestamp: m.timestamp,
     }));
 }
+
+export type { ActionRequest };

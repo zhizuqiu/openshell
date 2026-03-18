@@ -6,7 +6,7 @@ import { t } from "../i18n.js";
 
 export interface ToolApprovalRequest {
   name: string;
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   description?: string;
 }
 
@@ -21,16 +21,14 @@ export interface ToolApprovalDialogProps {
 export const ToolApprovalDialog: React.FC<ToolApprovalDialogProps> = ({
   interrupt,
   onSubmit,
-  onCancel,
+  onCancel: _onCancel,
 }) => {
   const actionRequests: ToolApprovalRequest[] =
     interrupt.value?.actionRequests || interrupt.value?.action_requests || [];
 
   const handleBatchDecision = (value: "approve" | "reject") => {
-    const message = value === "reject" 
-      ? t("hitl.rejectedFeedback")
-      : undefined;
-      
+    const message = value === "reject" ? t("hitl.rejectedFeedback") : undefined;
+
     const finalDecisions = actionRequests.map(() => ({
       type: value,
       message,
@@ -67,11 +65,18 @@ export const ToolApprovalDialog: React.FC<ToolApprovalDialogProps> = ({
       <Box flexDirection="column">
         {actionRequests.map((req, i) => {
           const argsText = Object.entries(req.args)
-            .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+            .map(
+              ([k, v]) =>
+                `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`,
+            )
             .join(", ");
-            
+
           return (
-            <Box key={i} flexDirection="column" marginBottom={i === actionRequests.length - 1 ? 0 : 1}>
+            <Box
+              key={i}
+              flexDirection="column"
+              marginBottom={i === actionRequests.length - 1 ? 0 : 1}
+            >
               <Text color="white">
                 {i + 1}. <Text bold>{req.name}</Text>
               </Text>
@@ -94,7 +99,16 @@ export const ToolApprovalDialog: React.FC<ToolApprovalDialogProps> = ({
         })}
       </Box>
 
-      <Box marginTop={0} borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor="gray" borderDimColor={true} />
+      <Box
+        marginTop={0}
+        borderStyle="single"
+        borderTop={true}
+        borderBottom={false}
+        borderLeft={false}
+        borderRight={false}
+        borderColor="gray"
+        borderDimColor={true}
+      />
 
       <Box marginTop={0}>
         <ChoiceView
@@ -114,7 +128,8 @@ export const ToolApprovalDialog: React.FC<ToolApprovalDialogProps> = ({
 
       <Box marginTop={1} flexDirection="column">
         <Text color="gray" dimColor>
-          {t("app.navigateLabel")}: ↑/↓ | {t("app.confirmLabel")}: Enter | {t("app.cancelLabel")}: Esc
+          {t("app.navigateLabel")}: ↑/↓ | {t("app.confirmLabel")}: Enter |{" "}
+          {t("app.cancelLabel")}: Esc
         </Text>
       </Box>
     </Box>

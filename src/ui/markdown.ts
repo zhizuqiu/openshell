@@ -4,11 +4,10 @@
  */
 
 import { marked } from "marked";
-// @ts-ignore - marked-terminal types are incomplete
 import { markedTerminal } from "marked-terminal";
 
 // Configure marked with terminal renderer
-// @ts-ignore - types are incomplete but runtime works
+// @ts-expect-error - types are incomplete but runtime works
 marked.use(markedTerminal());
 
 /**

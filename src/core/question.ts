@@ -27,7 +27,7 @@ export interface QuestionResponse {
 class QuestionManager extends EventEmitter {
   private currentRequest: QuestionRequest | null = null;
   private resolver: ((answers: string[][]) => void) | null = null;
-  private rejecter: ((reason: any) => void) | null = null;
+  private rejecter: ((reason: unknown) => void) | null = null;
 
   /**
    * 向 UI 发起提问请求

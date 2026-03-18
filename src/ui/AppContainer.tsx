@@ -787,7 +787,7 @@ export function AppContainer({ config }: AppContainerProps) {
               ? msg.content
               : JSON.stringify(msg.content);
           const toolCalls = msg.tool_calls || msg.kwargs?.tool_calls || [];
-          let msgType = msg._getType?.() || msg.type || msg.kwargs?.type;
+          const msgType = msg._getType?.() || msg.type || msg.kwargs?.type;
           const isTool =
             msgType === "tool" ||
             msg instanceof ToolMessage ||
@@ -900,7 +900,7 @@ export function AppContainer({ config }: AppContainerProps) {
 
                 if (newToolCalls.length > 0) {
                   // 查找现有的 TOOL_CALL block
-                  let toolCallBlock = assistantContent.find(
+                  const toolCallBlock = assistantContent.find(
                     (block) => block.type === MsgType.TOOL_CALL,
                   );
 
