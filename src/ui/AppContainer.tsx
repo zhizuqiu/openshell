@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from "react";
-import { Box, Text, useApp, useStdin, Static } from "ink";
-import SelectInput from "ink-select-input";
+import { Box, useApp, useStdin, Static } from "ink";
 import { ToolApprovalDialog } from "./ToolApprovalDialog.js";
-import Spinner from "ink-spinner";
 import { createDataListener } from "./input/key-parser.js";
 import type { Key } from "./input/key-parser.js";
-import { tildeifyPath, shortenPath } from "./utils/path.js";
 import { Banner } from "./components/Banner.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { InputBox } from "./components/InputBox.js";
 import { SuggestionsList } from "./components/SuggestionsList.js";
+import { LoadingIndicator } from "./components/LoadingIndicator.js";
+import { SessionSelector } from "./components/SessionSelector.js";
+import { FooterBar } from "./components/FooterBar.js";
+import { DebugIndicator } from "./components/DebugIndicator.js";
 import { useInputState } from "./hooks/useInputState.js";
 import {
   createShellAgent,
@@ -48,8 +49,6 @@ export function AppContainer({ config }: AppContainerProps) {
     getI18n().setLanguage(config.lang);
   }
 
-  // --- 布局常量 ---
-  const mainWidth = "100%";
   const {
     inputValue,
     setInputValue,
@@ -1458,12 +1457,7 @@ export function AppContainer({ config }: AppContainerProps) {
       <Banner showBanner={config.showBanner} version={config.version} />
 
       {isLoading ? (
-        <Box flexDirection="column" marginY={1}>
-          <Box flexDirection="row" alignItems="center" gap={1}>
-            <Spinner type="dots" />
-            <Text>{t("app.initializing")}...</Text>
-          </Box>
-        </Box>
+        <LoadingIndicator message={`${t("app.initializing")}...`} />
       ) : (
         <>
           <Static items={stableMessages} key="chat-history">
@@ -1495,37 +1489,14 @@ export function AppContainer({ config }: AppContainerProps) {
                   onFinished={() => setActiveQuestionRequest(null)}
                 />
               ) : isSelectingSession ? (
-                <Box
-                  flexDirection="column"
-                  padding={1}
-                  borderStyle="round"
-                  borderColor="cyan"
-                  borderDimColor={true}
-                  width={mainWidth}
-                >
-                  <Text bold color="cyan">
-                    Select a session to restore:
-                  </Text>
-                  <Box marginTop={1}>
-                    {sessionList.length > 0 ? (
-                      <SelectInput
-                        items={sessionList}
-                        onSelect={(item) => {
-                          setIsSelectingSession(false);
-                          const command = `/session ${item.value}`;
-                          void handleCommand(command);
-                        }}
-                      />
-                    ) : (
-                      <Text dimColor>No historical sessions found.</Text>
-                    )}
-                  </Box>
-                  <Box marginTop={1}>
-                    <Text dimColor color="gray">
-                      Navigate: ↑/↓ | Resume: Enter | Delete: x | Cancel: ESC
-                    </Text>
-                  </Box>
-                </Box>
+                <SessionSelector
+                  sessions={sessionList}
+                  onSelect={(sessionId) => {
+                    setIsSelectingSession(false);
+                    const command = `/session ${sessionId}`;
+                    void handleCommand(command);
+                  }}
+                />
               ) : pendingInterruptMessages.length > 0 ? (
                 <Box flexDirection="column">{renderPendingApprovals()}</Box>
               ) : (
@@ -1536,32 +1507,11 @@ export function AppContainer({ config }: AppContainerProps) {
                   cursorPosition={cursorPosition}
                 />
               )}
-              <Box
-                paddingX={2}
-                marginTop={0}
-                marginBottom={1}
-                flexDirection="row"
-                justifyContent="space-between"
-                width={mainWidth}
-              >
-                <Box>
-                  <Text dimColor color="gray">
-                    {shortenPath(tildeifyPath(currentDir))}
-                  </Text>
-                </Box>
-                <Box flexDirection="row">
-                  {mode === "shell" && (
-                    <Box marginRight={2}>
-                      <Text dimColor color="yellow">
-                        (Press Esc to exit Shell Mode)
-                      </Text>
-                    </Box>
-                  )}
-                  <Text dimColor color="blue">
-                    {modelName}
-                  </Text>
-                </Box>
-              </Box>
+              <FooterBar
+                currentDir={currentDir}
+                modelName={modelName}
+                mode={mode}
+              />
 
               <SuggestionsList
                 suggestions={suggestions}
@@ -1571,11 +1521,7 @@ export function AppContainer({ config }: AppContainerProps) {
           </Box>
         </>
       )}
-      {config.debug && (
-        <Box marginBottom={1}>
-          <Text color="yellow">DEBUG: {t("app.debugMode")}</Text>
-        </Box>
-      )}
+      <DebugIndicator visible={config.debug} />
     </Box>
   );
 }
