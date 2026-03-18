@@ -20,12 +20,6 @@ export function InputBox({
 }: InputBoxProps): React.ReactElement {
   const colors = getThemeColors();
 
-  const borderColor = isProcessing
-    ? colors.promptProcessing
-    : mode === "shell"
-      ? colors.promptShell
-      : colors.promptAgent;
-
   const promptColor = isProcessing
     ? colors.promptProcessing
     : mode === "shell"
@@ -34,43 +28,58 @@ export function InputBox({
 
   const prompt = mode === "shell" ? "! " : "> ";
 
+  const termWidth = (process.stdout.columns || 80) - 2;
+
   return (
     <Box
-      flexDirection="row"
-      paddingX={1}
-      borderStyle="round"
-      borderColor={borderColor}
-      borderDimColor={true}
+      flexDirection="column"
       backgroundColor={colors.inputBackground}
-      alignItems="flex-start"
       width="100%"
     >
-      <Text color={promptColor} bold>
-        {prompt}
-      </Text>
-      <Box flexGrow={1}>
-        {isProcessing ? (
-          inputValue ? (
-            <Text dimColor wrap="wrap">
-              {inputValue}
-            </Text>
-          ) : (
-            <Box flexDirection="row">
-              <Text color="yellow">
-                <Spinner type="dots" />
+      <Box width="100%">
+        <Text
+          color={colors.terminalBackground}
+          backgroundColor={colors.inputBackground}
+        >
+          {"▀".repeat(Math.max(1, termWidth))}
+        </Text>
+      </Box>
+      <Box flexDirection="row" paddingX={1} alignItems="flex-start">
+        <Text color={promptColor} bold>
+          {prompt}
+        </Text>
+        <Box flexGrow={1}>
+          {isProcessing ? (
+            inputValue ? (
+              <Text dimColor wrap="wrap">
+                {inputValue}
               </Text>
-              <Text dimColor> Processing...</Text>
-            </Box>
-          )
-        ) : inputValue.length === 0 ? (
-          <Text color="#888888">{placeholder}</Text>
-        ) : (
-          <Text wrap="wrap">
-            <Text>{inputValue.slice(0, cursorPosition)}</Text>
-            <Text inverse>{inputValue[cursorPosition] || " "}</Text>
-            <Text>{inputValue.slice(cursorPosition + 1)}</Text>
-          </Text>
-        )}
+            ) : (
+              <Box flexDirection="row">
+                <Text color="yellow">
+                  <Spinner type="dots" />
+                </Text>
+                <Text dimColor> Processing...</Text>
+              </Box>
+            )
+          ) : inputValue.length === 0 ? (
+            <Text color="#888888">{placeholder}</Text>
+          ) : (
+            <Text wrap="wrap">
+              <Text>{inputValue.slice(0, cursorPosition)}</Text>
+              <Text inverse>{inputValue[cursorPosition] || " "}</Text>
+              <Text>{inputValue.slice(cursorPosition + 1)}</Text>
+            </Text>
+          )}
+        </Box>
+      </Box>
+      <Box width="100%">
+        <Text
+          color={colors.terminalBackground}
+          backgroundColor={colors.inputBackground}
+        >
+          {"▄".repeat(Math.max(1, termWidth))}
+        </Text>
       </Box>
     </Box>
   );

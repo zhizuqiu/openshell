@@ -1,13 +1,25 @@
 import { DARK_THEME, LIGHT_THEME, type ThemeColors } from "./colors.js";
+import {
+  getTerminalBackground,
+  getTerminalBackgroundHex,
+  type TerminalBackground,
+} from "../../core/terminal/index.js";
 
-export type ThemeType = "dark" | "light";
+export type ThemeType = "dark" | "light" | "auto";
 
-let currentTheme: ThemeType = "dark";
+let currentTheme: ThemeType = "auto";
+let detectedBackground: TerminalBackground | null = null;
 
-export function getTheme(): ThemeType {
-  const envTheme = process.env["OPENSHELL_THEME"];
-  if (envTheme === "light" || envTheme === "dark") {
-    return envTheme;
+export function setDetectedBackground(bg: TerminalBackground | null): void {
+  detectedBackground = bg;
+}
+
+export function getTheme(): "dark" | "light" {
+  if (currentTheme === "auto") {
+    if (detectedBackground) {
+      return detectedBackground;
+    }
+    return getTerminalBackground();
   }
   return currentTheme;
 }
@@ -18,5 +30,12 @@ export function setTheme(theme: ThemeType): void {
 
 export function getThemeColors(): ThemeColors {
   const theme = getTheme();
-  return theme === "light" ? LIGHT_THEME : DARK_THEME;
+  const colors = theme === "light" ? LIGHT_THEME : DARK_THEME;
+  
+  const terminalBg = getTerminalBackgroundHex();
+  
+  return {
+    ...colors,
+    terminalBackground: terminalBg,
+  };
 }

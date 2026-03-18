@@ -12,6 +12,12 @@ import { hideBin } from "yargs/helpers";
 import { AppContainer } from "./ui/AppContainer.js";
 // 从核心库导入版本获取函数
 import { getVersion } from "./core/index.js";
+// 导入终端背景色检测
+import {
+  detectTerminalBackground,
+  getTerminalBackground,
+} from "./core/terminal/index.js";
+import { setDetectedBackground } from "./ui/themes/theme.js";
 
 // 命令行参数接口定义
 interface Arguments {
@@ -29,6 +35,10 @@ interface Arguments {
 
 // 主函数，应用程序入口点
 export async function main() {
+  // 检测终端背景色
+  await detectTerminalBackground();
+  setDetectedBackground(getTerminalBackground());
+
   // 解析命令行参数
   const argv = (await yargs(hideBin(process.argv))
     // 调试模式选项

@@ -1,0 +1,1 @@
+export { detectTerminalBackground, getDetectedBackground, getTerminalBackground, getTerminalBackgroundHex, type TerminalBackground } from "./background-detection.js";

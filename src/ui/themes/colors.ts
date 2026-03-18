@@ -1,4 +1,5 @@
 export interface ThemeColors {
+  terminalBackground: string;
   inputBackground: string;
   inputBorder: string;
   promptAgent: string;
@@ -7,6 +8,7 @@ export interface ThemeColors {
 }
 
 export const DARK_THEME: ThemeColors = {
+  terminalBackground: "#000000",
   inputBackground: "#5F5F5F",
   inputBorder: "#4a4a4a",
   promptAgent: "#87AFFF",
@@ -15,6 +17,7 @@ export const DARK_THEME: ThemeColors = {
 };
 
 export const LIGHT_THEME: ThemeColors = {
+  terminalBackground: "#FFFFFF",
   inputBackground: "#E4E4E4",
   inputBorder: "#D0D0D0",
   promptAgent: "#005FAF",
