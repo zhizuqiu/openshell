@@ -36,7 +36,7 @@ export function InputBox({
       backgroundColor={colors.inputBackground}
       width="100%"
     >
-      <Box width="100%">
+      <Box width="100%" backgroundColor={colors.inputBackground}>
         <Text
           color={colors.terminalBackground}
           backgroundColor={colors.inputBackground}
@@ -44,11 +44,11 @@ export function InputBox({
           {"▀".repeat(Math.max(1, termWidth))}
         </Text>
       </Box>
-      <Box flexDirection="row" paddingX={1} alignItems="flex-start">
-        <Text color={promptColor} bold>
+      <Box flexDirection="row" paddingX={1} alignItems="flex-start" backgroundColor={colors.inputBackground}>
+        <Text color={promptColor} bold backgroundColor={colors.inputBackground}>
           {prompt}
         </Text>
-        <Box flexGrow={1}>
+        <Box flexGrow={1} backgroundColor={colors.inputBackground}>
           {isProcessing ? (
             inputValue ? (
               <Text dimColor wrap="wrap" backgroundColor={colors.inputBackground}>
@@ -81,7 +81,7 @@ export function InputBox({
           )}
         </Box>
       </Box>
-      <Box width="100%">
+      <Box width="100%" backgroundColor={colors.inputBackground}>
         <Text
           color={colors.terminalBackground}
           backgroundColor={colors.inputBackground}
