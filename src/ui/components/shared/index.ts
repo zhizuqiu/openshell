@@ -1,0 +1,1 @@
+export { PaddedBox, type PaddedBoxProps } from "./PaddedBox.js";

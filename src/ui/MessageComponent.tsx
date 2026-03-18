@@ -7,6 +7,8 @@ import {
   AssistantMessageType as MsgType,
   ToolCallStatus,
 } from "./types.js";
+import { getThemeColors } from "./themes/index.js";
+import { PaddedBox } from "./components/shared/PaddedBox.js";
 
 // 辅助函数：根据规则截断工具结果
 function truncateResult(result: string) {
@@ -190,27 +192,28 @@ interface MessageComponentProps {
 
 export function MessageComponent({ message }: MessageComponentProps) {
   const { role, content, error, streaming } = message;
+  const colors = getThemeColors();
 
   return (
     <Box flexDirection="column">
       {role === Role.USER ? (
-        <Box
-          flexDirection="row"
-          marginBottom={1}
-          borderStyle="round"
-          borderColor="cyan"
-          borderDimColor={true}
-          paddingX={1}
-          width={(process.stdout.columns || 80) - 4}
-        >
-          <Box marginRight={1}>
-            <Text color="cyan" dimColor>{`>`}</Text>
-          </Box>
-          <Box flexDirection="column" flexGrow={1}>
-            <Text color="white" wrap="wrap" dimColor>
-              {content as string}
-            </Text>
-          </Box>
+        <Box marginBottom={1}>
+          <PaddedBox
+            backgroundColor={colors.userMessageBackground}
+            terminalBackground={colors.terminalBackground}
+            width={(process.stdout.columns || 80) - 4}
+          >
+            <Box flexDirection="row">
+              <Box marginRight={1}>
+                <Text color="cyan" dimColor>{`>`}</Text>
+              </Box>
+              <Box flexDirection="column" flexGrow={1}>
+                <Text color="white" wrap="wrap" dimColor>
+                  {content as string}
+                </Text>
+              </Box>
+            </Box>
+          </PaddedBox>
         </Box>
       ) : role === Role.ASSISTANT ? (
         <Box flexDirection="column" marginBottom={1}>
