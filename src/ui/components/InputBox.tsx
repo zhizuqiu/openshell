@@ -51,11 +51,11 @@ export function InputBox({
         <Box flexGrow={1}>
           {isProcessing ? (
             inputValue ? (
-              <Text dimColor wrap="wrap">
+              <Text dimColor wrap="wrap" backgroundColor={colors.inputBackground}>
                 {inputValue}
               </Text>
             ) : (
-              <Box flexDirection="row">
+              <Box flexDirection="row" backgroundColor={colors.inputBackground}>
                 <Text color="yellow">
                   <Spinner type="dots" />
                 </Text>
@@ -63,12 +63,20 @@ export function InputBox({
               </Box>
             )
           ) : inputValue.length === 0 ? (
-            <Text color="#888888">{placeholder}</Text>
+            <Text color="#888888" backgroundColor={colors.inputBackground}>
+              {placeholder}
+            </Text>
           ) : (
-            <Text wrap="wrap">
-              <Text>{inputValue.slice(0, cursorPosition)}</Text>
-              <Text inverse>{inputValue[cursorPosition] || " "}</Text>
-              <Text>{inputValue.slice(cursorPosition + 1)}</Text>
+            <Text wrap="wrap" backgroundColor={colors.inputBackground}>
+              <Text backgroundColor={colors.inputBackground}>
+                {inputValue.slice(0, cursorPosition)}
+              </Text>
+              <Text inverse backgroundColor={colors.inputBackground}>
+                {inputValue[cursorPosition] || " "}
+              </Text>
+              <Text backgroundColor={colors.inputBackground}>
+                {inputValue.slice(cursorPosition + 1)}
+              </Text>
             </Text>
           )}
         </Box>
