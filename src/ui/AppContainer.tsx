@@ -9,6 +9,7 @@ import { tildeifyPath, shortenPath } from "./utils/path.js";
 import { Banner } from "./components/Banner.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { InputBox } from "./components/InputBox.js";
+import { SuggestionsList } from "./components/SuggestionsList.js";
 import {
   createShellAgent,
   listAllSessions,
@@ -44,7 +45,6 @@ export function AppContainer({ config }: AppContainerProps) {
 
   // --- 布局常量 ---
   const mainWidth = "100%";
-  const innerWidth = "100%";
   const [isLoading, setIsLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -1792,28 +1792,10 @@ export function AppContainer({ config }: AppContainerProps) {
                 </Box>
               </Box>
 
-              {suggestions.length > 0 && (
-                <Box
-                  flexDirection="column"
-                  marginTop={1}
-                  paddingLeft={2}
-                  borderStyle="round"
-                  borderColor="gray"
-                  borderDimColor={true}
-                  width={innerWidth}
-                >
-                  {suggestions.map((cmd, idx) => (
-                    <Box key={cmd}>
-                      <Text
-                        color={idx === selectedIndex ? "cyan" : "white"}
-                        bold={idx === selectedIndex}
-                      >
-                        {idx === selectedIndex ? "→ " : "  "}/{cmd}
-                      </Text>
-                    </Box>
-                  ))}
-                </Box>
-              )}
+              <SuggestionsList
+                suggestions={suggestions}
+                selectedIndex={selectedIndex}
+              />
             </Box>
           </Box>
         </>
