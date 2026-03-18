@@ -3,11 +3,10 @@ import { Box, Text, useApp, useStdin, Static } from "ink";
 import SelectInput from "ink-select-input";
 import { ToolApprovalDialog } from "./ToolApprovalDialog.js";
 import Spinner from "ink-spinner";
-import Gradient from "ink-gradient";
-import BigText from "ink-big-text";
 import { createDataListener } from "./input/key-parser.js";
 import type { Key } from "./input/key-parser.js";
 import { tildeifyPath, shortenPath } from "./utils/path.js";
+import { Banner } from "./components/Banner.js";
 import {
   createShellAgent,
   listAllSessions,
@@ -1683,63 +1682,7 @@ export function AppContainer({ config }: AppContainerProps) {
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Static items={["banner"]} key="brand-banner">
-        {(item) => (
-          <Box
-            key={item}
-            marginBottom={1}
-            flexDirection="column"
-            alignItems="center"
-            width="100%"
-          >
-            {config.showBanner && (
-              <Gradient name="morning">
-                <BigText text="OpenShell" font="block" />
-              </Gradient>
-            )}
-            <Box
-              marginTop={config.showBanner ? 1 : 0}
-              flexDirection="row"
-              gap={2}
-            >
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Enter
-                </Text>
-                <Text dimColor>{t("shortcuts.sendLabel")}</Text>
-              </Box>
-              <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Esc
-                </Text>
-                <Text dimColor>{t("shortcuts.cancelLabel")}</Text>
-              </Box>
-              <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Ctrl+A
-                </Text>
-                <Text dimColor>{t("status.autoExecuteLabel")}</Text>
-              </Box>
-              <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  ↑/↓
-                </Text>
-                <Text dimColor>{t("shortcuts.historyLabel")}</Text>
-              </Box>
-              <Text dimColor>|</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color="cyan" bold>
-                  Ctrl+C
-                </Text>
-                <Text dimColor>{t("shortcuts.exitLabel")}</Text>
-              </Box>
-            </Box>
-          </Box>
-        )}
-      </Static>
+      <Banner showBanner={config.showBanner} version={config.version} />
 
       {isLoading ? (
         <Box flexDirection="column" marginY={1}>
