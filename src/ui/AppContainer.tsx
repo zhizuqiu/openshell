@@ -19,6 +19,11 @@ import {
 import { killAllProcesses } from "../core/ai/tools.js";
 import { getCommandManager } from "../core/session/command-manager.js";
 import { questionManager, type QuestionRequest } from "../core/question.js";
+import {
+  parseToolResults,
+  convertLangChainMessage,
+  formatSessionMessages,
+} from "../core/ai/message-utils.js";
 import { AskUserDialog } from "./AskUserDialog.js";
 import { t, getI18n } from "../i18n.js";
 import { MessageComponent } from "./MessageComponent.js";
@@ -27,7 +32,6 @@ import type {
   Message,
   AssistantMessage,
   Interrupt,
-  ToolCall,
 } from "./types.js";
 import {
   CustomMultiMessageRole as Role,
@@ -119,245 +123,14 @@ export function AppContainer({ config }: AppContainerProps) {
       });
 
       if (state && state.values && Array.isArray(state.values.messages)) {
-        const langChainMessages = state.values.messages as any[];
+        const langChainMessages = state.values.messages as BaseMessage[];
 
-        // 两步处理：
-        // 1. 先遍历所有消息，收集 AI 消息和 ToolMessage
-        // 2. 将 ToolMessage 的 result 关联到对应的 AI 消息的 tool_call 上
+        const toolResults = parseToolResults(langChainMessages);
+        const processedMessages = langChainMessages
+          .map((m) => convertLangChainMessage(m, toolResults))
+          .filter((m): m is NonNullable<typeof m> => m !== null);
 
-        interface ProcessedMessage {
-          role: Role;
-          content: any;
-          timestamp: Date;
-        }
-
-        const toolResults = new Map<
-          string,
-          { result: string; status: ToolCallStatus }
-        >();
-
-        // 第一步：先遍历所有消息，收集 ToolMessage 的结果
-        for (const m of langChainMessages) {
-          const kwargs = m.kwargs || m;
-          const type =
-            m.type ||
-            kwargs.type ||
-            (typeof m._getType === "function"
-              ? m._getType()
-              : kwargs._getType?.());
-
-          const isTool =
-            type === "tool" ||
-            m.id?.[2] === "ToolMessage" ||
-            kwargs.id?.[2] === "ToolMessage";
-
-          if (isTool) {
-            const toolCallId = m.tool_call_id || kwargs.tool_call_id;
-            const resultContent = m.content ?? kwargs.content ?? "";
-
-            // 解析工具结果，提取 output 字段
-            let resultStr = String(resultContent);
-            let status = ToolCallStatus.SUCCESS;
-
-            try {
-              // 工具结果通常是 JSON 格式：{"status":"success","output":"..."}
-              const parsed = JSON.parse(resultContent);
-              if (parsed && typeof parsed === "object") {
-                // 如果有 output 字段，使用它作为结果
-                if (typeof parsed.output === "string") {
-                  resultStr = parsed.output;
-                } else if (typeof parsed.result === "string") {
-                  resultStr = parsed.result;
-                }
-                // 根据 status 字段设置状态
-                if (parsed.status === "error" || parsed.status === "failed") {
-                  status = ToolCallStatus.ERROR;
-                } else if (
-                  parsed.status === "canceled" ||
-                  parsed.status === "cancelled"
-                ) {
-                  status = ToolCallStatus.CANCELED;
-                }
-              }
-            } catch {
-              // 不是 JSON 格式，执行启发式正则识别
-              const isRejected =
-                resultContent.includes("rejected") ||
-                resultContent.includes("cancelled") ||
-                resultContent.includes("拒绝") ||
-                resultContent.includes("取消");
-              if (isRejected) {
-                status = ToolCallStatus.CANCELED;
-                resultStr =
-                  t("hitl.rejectedFeedback") || "Operation rejected by user.";
-              }
-            }
-
-            if (resultStr.includes("Error") || resultStr.includes("failed")) {
-              status = ToolCallStatus.ERROR;
-            }
-
-            if (toolCallId) {
-              toolResults.set(toolCallId, { result: resultStr, status });
-            }
-          }
-        }
-
-        // 第二步：处理所有消息，构建 UI 消息
-        const processedMessages: ProcessedMessage[] = [];
-
-        for (const m of langChainMessages) {
-          const kwargs = m.kwargs || m;
-          const type =
-            m.type ||
-            kwargs.type ||
-            (typeof m._getType === "function"
-              ? m._getType()
-              : kwargs._getType?.());
-
-          const isTool =
-            type === "tool" ||
-            m.id?.[2] === "ToolMessage" ||
-            kwargs.id?.[2] === "ToolMessage";
-
-          // ToolMessage 不添加到 UI，跳过
-          if (isTool) continue;
-
-          let role: Role = Role.ASSISTANT;
-          if (
-            type === "human" ||
-            type === "user" ||
-            (m.id && Array.isArray(m.id) && m.id[2] === "HumanMessage")
-          ) {
-            role = Role.USER;
-          } else if (
-            type === "system" ||
-            (m.id && Array.isArray(m.id) && m.id[2] === "SystemMessage")
-          ) {
-            role = Role.SYSTEM;
-          } else if (
-            type === "ai" ||
-            (m.id &&
-              Array.isArray(m.id) &&
-              (m.id[2] === "AIMessage" || m.id[2] === "AIMessageChunk"))
-          ) {
-            role = Role.ASSISTANT;
-          }
-
-          let content: any = m.content ?? kwargs.content;
-          const timestamp =
-            m.additional_kwargs?.timestamp ||
-            kwargs.additional_kwargs?.timestamp ||
-            Date.now();
-
-          if (role === Role.ASSISTANT) {
-            const assistantContent: AssistantMessage[] = [];
-
-            // 1. 先检查是否有 tool_calls（优先处理工具调用）
-            const toolCalls =
-              m.tool_calls ||
-              kwargs.tool_calls ||
-              m.kwargs?.tool_calls ||
-              m.kwargs?.kwargs?.tool_calls ||
-              [];
-
-            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-              const formattedToolCalls: ToolCall[] = toolCalls.map((tc) => {
-                const tcId = tc.id || "";
-                // 检查是否有对应的 ToolMessage 结果
-                const toolResult = toolResults.get(tcId);
-                return {
-                  id: tcId,
-                  name: tc.name || "unknown",
-                  args: tc.args || {},
-                  // 优先使用 ToolMessage 的结果，如果没有则使用 tc.result
-                  result:
-                    toolResult !== undefined ? toolResult.result : tc.result,
-                  status:
-                    toolResult !== undefined
-                      ? toolResult.status
-                      : tc.status || ToolCallStatus.SUCCESS,
-                };
-              });
-              assistantContent.push({
-                type: MsgType.TOOL_CALL,
-                tool_calls: formattedToolCalls,
-              });
-            }
-
-            // 2. 处理文本内容
-            if (typeof content === "string" && content.trim()) {
-              if (content.trim().startsWith("[")) {
-                try {
-                  const parsed = JSON.parse(content);
-                  if (Array.isArray(parsed)) {
-                    if (parsed.length > 0 && parsed[0]?.type) {
-                      assistantContent.push(...parsed);
-                    } else {
-                      const hasToolCalls = parsed.some(
-                        (item) => item.name || item.function || item.id,
-                      );
-                      if (hasToolCalls) {
-                        const formattedOldFormat: ToolCall[] = parsed.map(
-                          (tc) => ({
-                            id: tc.id || tc.function?.id || "",
-                            name: tc.name || tc.function?.name || "unknown",
-                            args: tc.args || tc.function?.arguments || {},
-                            result: tc.result,
-                            status: tc.status || ToolCallStatus.SUCCESS,
-                          }),
-                        );
-                        assistantContent.push({
-                          type: MsgType.TOOL_CALL,
-                          tool_calls: formattedOldFormat,
-                        });
-                      } else {
-                        assistantContent.push({ type: MsgType.TEXT, content });
-                      }
-                    }
-                  } else {
-                    assistantContent.push({ type: MsgType.TEXT, content });
-                  }
-                } catch {
-                  assistantContent.push({ type: MsgType.TEXT, content });
-                }
-              } else {
-                assistantContent.push({ type: MsgType.TEXT, content });
-              }
-            } else if (content && !Array.isArray(content)) {
-              assistantContent.push({
-                type: MsgType.TEXT,
-                content: String(content || ""),
-              });
-            }
-
-            if (assistantContent.length === 0) {
-              assistantContent.push({ type: MsgType.TEXT, content: "" });
-            }
-
-            content = assistantContent;
-          }
-
-          processedMessages.push({
-            role,
-            content,
-            timestamp: new Date(timestamp),
-          });
-        }
-
-        // 过滤掉空消息
-        const restoredMessages: Message[] = processedMessages
-          .filter(
-            (m) =>
-              m.content &&
-              (typeof m.content === "string" ||
-                (Array.isArray(m.content) && m.content.length > 0)),
-          )
-          .map((m) => ({
-            role: m.role,
-            content: m.content,
-            timestamp: m.timestamp,
-          }));
+        const restoredMessages = formatSessionMessages(processedMessages);
 
         seenMessageIdsRef.current.clear();
         if (restoredMessages.length > 0) {
@@ -375,8 +148,7 @@ export function AppContainer({ config }: AppContainerProps) {
             },
           ]);
           langChainMessages.forEach((m) => {
-            const msgId = m.id || m.kwargs?.id;
-            if (msgId) seenMessageIdsRef.current.add(msgId);
+            if (m.id) seenMessageIdsRef.current.add(m.id);
           });
         } else {
           setMessages([
