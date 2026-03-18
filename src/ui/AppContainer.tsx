@@ -7,6 +7,7 @@ import { createDataListener } from "./input/key-parser.js";
 import type { Key } from "./input/key-parser.js";
 import { tildeifyPath, shortenPath } from "./utils/path.js";
 import { Banner } from "./components/Banner.js";
+import { StatusBar } from "./components/StatusBar.js";
 import {
   createShellAgent,
   listAllSessions,
@@ -1708,32 +1709,13 @@ export function AppContainer({ config }: AppContainerProps) {
             />
           ))}
           <Box flexDirection="column" marginTop={1}>
-            <Box
-              flexDirection="row"
-              justifyContent="space-between"
-              width={mainWidth}
-            >
-              <Box flexDirection="row" alignItems="center" gap={1}>
-                <Text bold color="cyan">
-                  OpenShell {config.version}
-                </Text>
-                <Text dimColor>|</Text>
-                <Text dimColor>Session: {activeSessionId}</Text>
-                <Text dimColor>|</Text>
-                <Text bold color={mode === "shell" ? "green" : "cyan"}>
-                  [{mode === "shell" ? "Shell" : "Agent"}]
-                </Text>
-              </Box>
-              <Box flexDirection="row" gap={2}>
-                <Text color="magenta">
-                  {t("status.runningLabel")}: {runningCommands} |
-                </Text>
-                <Text color="magenta">
-                  {t("status.autoExecuteLabel")}(Ctrl+A):{" "}
-                  {autoExecute ? "✓" : "✗"}
-                </Text>
-              </Box>
-            </Box>
+            <StatusBar
+              version={config.version}
+              sessionId={activeSessionId}
+              mode={mode}
+              runningCommands={runningCommands}
+              autoExecute={autoExecute}
+            />
             <Box flexDirection="column" marginTop={0} marginBottom={1}>
               {activeQuestionRequest ? (
                 <AskUserDialog
