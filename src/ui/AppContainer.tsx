@@ -8,6 +8,7 @@ import type { Key } from "./input/key-parser.js";
 import { tildeifyPath, shortenPath } from "./utils/path.js";
 import { Banner } from "./components/Banner.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { InputBox } from "./components/InputBox.js";
 import {
   createShellAgent,
   listAllSessions,
@@ -1757,56 +1758,12 @@ export function AppContainer({ config }: AppContainerProps) {
               ) : pendingInterruptMessages.length > 0 ? (
                 <Box flexDirection="column">{renderPendingApprovals()}</Box>
               ) : (
-                <Box
-                  flexDirection="row"
-                  paddingX={1}
-                  borderStyle="round"
-                  borderColor={
-                    isProcessing ? "gray" : mode === "shell" ? "green" : "cyan"
-                  }
-                  borderDimColor={true}
-                  alignItems="flex-start"
-                  width={mainWidth}
-                >
-                  <Text
-                    color={
-                      isProcessing
-                        ? "gray"
-                        : mode === "shell"
-                          ? "green"
-                          : "cyan"
-                    }
-                    bold
-                  >
-                    {mode === "shell" ? "! " : "> "}
-                  </Text>
-                  <Box flexGrow={1}>
-                    {isProcessing ? (
-                      inputValue ? (
-                        <Text dimColor wrap="wrap">
-                          {inputValue}
-                        </Text>
-                      ) : (
-                        <Box flexDirection="row">
-                          <Text color="yellow">
-                            <Spinner type="dots" />
-                          </Text>
-                          <Text dimColor> Processing...</Text>
-                        </Box>
-                      )
-                    ) : inputValue.length === 0 ? (
-                      <Text color="#888888">
-                        Type message, ! for shell, / for commands
-                      </Text>
-                    ) : (
-                      <Text wrap="wrap">
-                        <Text>{inputValue.slice(0, cursorPosition)}</Text>
-                        <Text inverse>{inputValue[cursorPosition] || " "}</Text>
-                        <Text>{inputValue.slice(cursorPosition + 1)}</Text>
-                      </Text>
-                    )}
-                  </Box>
-                </Box>
+                <InputBox
+                  mode={mode}
+                  isProcessing={isProcessing}
+                  inputValue={inputValue}
+                  cursorPosition={cursorPosition}
+                />
               )}
               <Box
                 paddingX={2}
