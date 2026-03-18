@@ -25,6 +25,7 @@ import {
   convertLangChainMessage,
   formatSessionMessages,
 } from "../core/ai/message-utils.js";
+import type { IterableReadableStream } from "@langchain/core/utils/stream";
 import { AskUserDialog } from "./AskUserDialog.js";
 import { t, getI18n } from "../i18n.js";
 import { MessageComponent } from "./MessageComponent.js";
@@ -191,9 +192,7 @@ export function AppContainer({ config }: AppContainerProps) {
   const lastEscapeTimeRef = useRef(0);
   const cancelMessageAddedRef = useRef(false);
   const currentCommandRef = useRef<string>("");
-  const currentStreamRef = useRef<AsyncGenerator<Record<string, any>> | null>(
-    null,
-  );
+  const currentStreamRef = useRef<IterableReadableStream<unknown> | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const suggestionsRef = useRef<string[]>([]);
@@ -368,7 +367,7 @@ export function AppContainer({ config }: AppContainerProps) {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     if (cleanupKeyListenerRef.current) cleanupKeyListenerRef.current();
     if (currentStreamRef.current) {
-      currentStreamRef.current.return?.(undefined);
+      void currentStreamRef.current.return();
       currentStreamRef.current = null;
     }
     killAllProcesses();
@@ -949,7 +948,7 @@ export function AppContainer({ config }: AppContainerProps) {
           });
         }
       }
-    } catch (e) {}
+    } catch {}
   };
 
   const handleError = (error: unknown) => {
