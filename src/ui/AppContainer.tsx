@@ -10,6 +10,7 @@ import { Banner } from "./components/Banner.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { InputBox } from "./components/InputBox.js";
 import { SuggestionsList } from "./components/SuggestionsList.js";
+import { useInputState } from "./hooks/useInputState.js";
 import {
   createShellAgent,
   listAllSessions,
@@ -45,10 +46,19 @@ export function AppContainer({ config }: AppContainerProps) {
 
   // --- 布局常量 ---
   const mainWidth = "100%";
+  const {
+    inputValue,
+    setInputValue,
+    cursorPosition,
+    setCursorPosition,
+    inputValueRef,
+    cursorRef,
+    isPastingRef,
+    lastPasteEndRef,
+    pasteBufferRef,
+  } = useInputState();
   const [isLoading, setIsLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [cursorPosition, setCursorPosition] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [agent, setAgent] = useState<ReactAgent | null>(null);
   const [mode, setMode] = useState<"agent" | "shell">("agent");
@@ -73,16 +83,11 @@ export function AppContainer({ config }: AppContainerProps) {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
-  const isPastingRef = useRef(false); // 是否处于粘贴过程中
-  const lastPasteEndRef = useRef(0); // 上次粘贴结束的时间戳
-  const pasteBufferRef = useRef(""); // 粘贴内容缓冲区
-  const currentAiMsgIndexRef = useRef<number>(-1); // 当前正在执行流式更新的 AI 消息索引
+  const currentAiMsgIndexRef = useRef<number>(-1);
 
   // 引用快照，用于在事件处理闭包中获取最新状态
   const messagesRef = useRef(messages);
   const isProcessingRef = useRef(isProcessing);
-  const inputValueRef = useRef(inputValue);
-  const cursorRef = useRef(cursorPosition);
   const modeRef = useRef(mode);
 
   useEffect(() => {
@@ -91,12 +96,6 @@ export function AppContainer({ config }: AppContainerProps) {
   useEffect(() => {
     isProcessingRef.current = isProcessing;
   }, [isProcessing]);
-  useEffect(() => {
-    inputValueRef.current = inputValue;
-  }, [inputValue]);
-  useEffect(() => {
-    cursorRef.current = cursorPosition;
-  }, [cursorPosition]);
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
