@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { Box, Text, useApp, useStdin, Static } from "ink";
-import os from "os";
-import path from "path";
 import SelectInput from "ink-select-input";
 import { ToolApprovalDialog } from "./ToolApprovalDialog.js";
 import Spinner from "ink-spinner";
@@ -9,6 +7,7 @@ import Gradient from "ink-gradient";
 import BigText from "ink-big-text";
 import { createDataListener } from "./input/key-parser.js";
 import type { Key } from "./input/key-parser.js";
+import { tildeifyPath, shortenPath } from "./utils/path.js";
 import {
   createShellAgent,
   listAllSessions,
@@ -108,30 +107,6 @@ export function AppContainer({ config }: AppContainerProps) {
       process.stdout.write("\u001b[?2004l");
     };
   }, []);
-
-  const tildeifyPath = (fullPath: string) => {
-    const home = os.homedir();
-    if (fullPath === home) return "~";
-    if (fullPath.startsWith(home)) {
-      return `~${path.sep}${path.relative(home, fullPath)}`;
-    }
-    return fullPath;
-  };
-
-  const shortenPath = (p: string, maxLen: number = 40) => {
-    if (p.length <= maxLen) return p;
-    const segments = p.split(path.sep).filter(Boolean);
-    if (segments.length <= 2) return p;
-
-    const first = segments[0];
-    const last = segments[segments.length - 1];
-    const isTilde = p.startsWith("~");
-
-    const start = isTilde ? "~" : `${path.sep}${first}`;
-    const result = `${start}${path.sep}...${path.sep}${last}`;
-
-    return result.length > maxLen ? last : result;
-  };
 
   const loadSessionHistory = async (
     agentInstance: ReactAgent,
