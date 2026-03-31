@@ -277,6 +277,11 @@ export function AppContainer({ config }: AppContainerProps) {
             },
             {
               role: Role.SYSTEM,
+              content: "Type message, ! for shell, / for commands",
+              timestamp: new Date(),
+            },
+            {
+              role: Role.SYSTEM,
               content: t("app.aiNotConfigured"),
               timestamp: new Date(),
             },
@@ -341,6 +346,11 @@ export function AppContainer({ config }: AppContainerProps) {
                 content: t("app.welcome"),
                 timestamp: new Date(),
               },
+              {
+                role: Role.SYSTEM,
+                content: "Type message, ! for shell, / for commands",
+                timestamp: new Date(),
+              },
             ]);
           }
         } else {
@@ -348,6 +358,11 @@ export function AppContainer({ config }: AppContainerProps) {
             {
               role: Role.SYSTEM,
               content: t("app.welcome"),
+              timestamp: new Date(),
+            },
+            {
+              role: Role.SYSTEM,
+              content: "Type message, ! for shell, / for commands",
               timestamp: new Date(),
             },
           ]);
@@ -1391,6 +1406,16 @@ export function AppContainer({ config }: AppContainerProps) {
   const activeMessages = messages.filter(
     (m) => m.streaming || messageHasInterrupt(m),
   );
+  const getMessageKey = (msg: Message, index: number, prefix: string) => {
+    const rolePart = msg.role;
+    const timePart = msg.timestamp.getTime();
+    const contentPart =
+      typeof msg.content === "string"
+        ? msg.content
+        : JSON.stringify(msg.content);
+
+    return `${prefix}-${rolePart}-${timePart}-${index}-${contentPart.slice(0, 40)}`;
+  };
   const pendingInterruptMessages = activeMessages
     .filter(messageHasInterrupt)
     .flatMap((msg) => {
@@ -1461,17 +1486,18 @@ export function AppContainer({ config }: AppContainerProps) {
         <>
           <Static items={stableMessages} key="chat-history">
             {(msg, index) => (
-              <MessageComponent
-                key={`stable-${msg.timestamp.getTime()}-${index}`}
-                message={msg}
-              />
+              <Box key={getMessageKey(msg, index, "stable")} flexDirection="column">
+                <MessageComponent message={msg} />
+              </Box>
             )}
           </Static>
           {activeMessages.map((msg, index) => (
-            <MessageComponent
-              key={`active-${msg.timestamp.getTime()}-${index}`}
-              message={msg}
-            />
+            <Box
+              key={getMessageKey(msg, index, "active")}
+              flexDirection="column"
+            >
+              <MessageComponent message={msg} />
+            </Box>
           ))}
           <Box flexDirection="column" marginTop={1}>
             <StatusBar

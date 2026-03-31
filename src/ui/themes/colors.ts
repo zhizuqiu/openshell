@@ -10,20 +10,20 @@ export interface ThemeColors {
 
 export const DARK_THEME: ThemeColors = {
   terminalBackground: "#000000",
-  inputBackground: "#5F5F5F",
-  userMessageBackground: "#3a3a3a",
-  inputBorder: "#4a4a4a",
-  promptAgent: "#87AFFF",
-  promptShell: "#D7FFD7",
-  promptProcessing: "#878787",
+  inputBackground: "#000000",
+  userMessageBackground: "#1f1f1f",
+  inputBorder: "#626262",
+  promptAgent: "#d4d4d4",
+  promptShell: "#7fb685",
+  promptProcessing: "#6f6f6f",
 };
 
 export const LIGHT_THEME: ThemeColors = {
   terminalBackground: "#FFFFFF",
-  inputBackground: "#E4E4E4",
-  userMessageBackground: "#D8D8D8",
-  inputBorder: "#D0D0D0",
-  promptAgent: "#005FAF",
-  promptShell: "#005F00",
-  promptProcessing: "#878787",
+  inputBackground: "#FFFFFF",
+  userMessageBackground: "#efefec",
+  inputBorder: "#a8a8a3",
+  promptAgent: "#3f3f3a",
+  promptShell: "#3b6b41",
+  promptProcessing: "#8d8d88",
 };
