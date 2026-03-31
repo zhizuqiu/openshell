@@ -8,7 +8,6 @@ import {
   ToolCallStatus,
 } from "./types.js";
 import { getThemeColors } from "./themes/index.js";
-import { PaddedBox } from "./components/shared/PaddedBox.js";
 
 // 辅助函数：根据规则截断工具结果
 function truncateResult(result: string) {
@@ -25,6 +24,11 @@ function truncateResult(result: string) {
   return result;
 }
 
+function truncateArgs(args: ToolCall["args"]) {
+  const argsString = JSON.stringify(args);
+  return argsString.length > 120 ? `${argsString.slice(0, 117)}...` : argsString;
+}
+
 // 渲染单个工具调用请求和结果
 function renderToolCallItem(
   toolCall: ToolCall,
@@ -32,15 +36,10 @@ function renderToolCallItem(
   _isStreaming?: boolean,
 ) {
   const { name, args, result, id, interrupt, status } = toolCall;
-  const argsString = JSON.stringify(args);
-  const displayArgs =
-    argsString.length > 100 ? argsString.substring(0, 100) + "..." : argsString;
+  const displayArgs = truncateArgs(args);
 
-  const termWidth = process.stdout.columns || 80;
-  const safeWidth = termWidth - 6;
-
-  let statusIcon = <Text color="blue">●</Text>;
-  let borderColor = "white";
+  let statusIcon = <Text dimColor>●</Text>;
+  let statusLabel: string | null = null;
   const isCancelled = status === ToolCallStatus.CANCELED;
   const isError = status === ToolCallStatus.ERROR;
 
@@ -51,71 +50,47 @@ function renderToolCallItem(
           <Spinner type="dots" />
         </Text>
       );
-      borderColor = "cyan";
+      statusLabel = "running";
       break;
     case ToolCallStatus.SUCCESS:
-      statusIcon = <Text color="green">✓</Text>;
-      borderColor = "white";
+      statusIcon = <Text dimColor>●</Text>;
       break;
     case ToolCallStatus.ERROR:
-      statusIcon = <Text color="red">✗</Text>;
-      borderColor = "red";
+      statusIcon = <Text color="red">●</Text>;
+      statusLabel = "failed";
       break;
     case ToolCallStatus.CANCELED:
-      statusIcon = <Text color="gray">⊘</Text>;
-      borderColor = "white";
+      statusIcon = <Text dimColor>●</Text>;
+      statusLabel = "canceled";
       break;
     case ToolCallStatus.PENDING:
-      statusIcon = <Text color="yellow">⏸</Text>;
-      borderColor = "yellow";
+      statusIcon = <Text dimColor>●</Text>;
+      statusLabel = "queued";
       break;
   }
 
   if (interrupt) {
-    statusIcon = <Text color="yellow">⏸</Text>;
-    borderColor = "yellow";
+    statusLabel = "waiting for permission";
   }
 
   return (
-    <Box
-      flexDirection="column"
-      key={id || `tool-item-${index}`}
-      marginBottom={1}
-      borderStyle="round"
-      borderColor={borderColor}
-      borderDimColor={true}
-      paddingX={1}
-      width={safeWidth}
-    >
-      <Box flexDirection="row" marginBottom={0}>
+    <Box flexDirection="column" key={id || `tool-item-${index}`} marginBottom={1}>
+      <Box flexDirection="row" flexWrap="wrap">
         <Box marginRight={1}>{statusIcon}</Box>
-        <Text
-          bold
-          strikethrough={isCancelled}
-          color={isError ? "red" : undefined}
-        >
-          {name}
-        </Text>
-        {status === ToolCallStatus.EXECUTING && (
-          <Text dimColor italic>
-            {" "}
-            (running...)
+        <Box flexDirection="row" flexWrap="wrap">
+          <Text bold strikethrough={isCancelled} color={isError ? "red" : undefined}>
+            {name}
           </Text>
-        )}
-      </Box>
-
-      <Box marginLeft={3} flexDirection="column">
-        <Text dimColor wrap="wrap" strikethrough={isCancelled}>
-          {displayArgs}
-        </Text>
+          <Text dimColor strikethrough={isCancelled}>
+            ({displayArgs})
+          </Text>
+          {statusLabel ? <Text dimColor>{` ${statusLabel}`}</Text> : null}
+        </Box>
       </Box>
 
       {interrupt && (
-        <Box flexDirection="column" marginLeft={3} marginTop={1}>
-          <Text color="yellow" bold>
-            ⚠ Action requires your approval
-          </Text>
-          <Text color="yellow" dimColor italic>
+        <Box flexDirection="column" marginLeft={2}>
+          <Text dimColor>
             {interrupt.value?.action_requests?.[0]?.description ||
               "Please review and decide in the input area."}
           </Text>
@@ -123,24 +98,13 @@ function renderToolCallItem(
       )}
 
       {result && !isCancelled && (
-        <Box flexDirection="column" marginLeft={3} marginTop={1}>
-          <Box
-            borderStyle="single"
-            borderLeft={true}
-            borderRight={false}
-            borderTop={false}
-            borderBottom={false}
-            paddingLeft={1}
-            borderColor="gray"
-          >
-            <Text
-              dimColor={!isError}
-              color={isError ? "red" : undefined}
-              wrap="wrap"
-            >
-              {truncateResult(result)}
-            </Text>
-          </Box>
+        <Box flexDirection="row" marginLeft={2}>
+          <Text dimColor color={isError ? "red" : undefined}>
+            ⎿{" "}
+          </Text>
+          <Text dimColor={!isError} color={isError ? "red" : undefined} wrap="wrap">
+            {truncateResult(result)}
+          </Text>
         </Box>
       )}
     </Box>
@@ -197,23 +161,16 @@ export function MessageComponent({ message }: MessageComponentProps) {
   return (
     <Box flexDirection="column">
       {role === Role.USER ? (
-        <Box marginBottom={1}>
-          <PaddedBox
-            backgroundColor={colors.userMessageBackground}
-            terminalBackground={colors.terminalBackground}
-            width={(process.stdout.columns || 80) - 4}
-          >
-            <Box flexDirection="row">
-              <Box marginRight={1}>
-                <Text color="cyan" dimColor>{`>`}</Text>
-              </Box>
-              <Box flexDirection="column" flexGrow={1}>
-                <Text color="white" wrap="wrap" dimColor>
-                  {content as string}
-                </Text>
-              </Box>
-            </Box>
-          </PaddedBox>
+        <Box
+          flexDirection="column"
+          marginBottom={1}
+          backgroundColor={colors.userMessageBackground}
+          paddingRight={1}
+        >
+          <Text wrap="wrap">
+            <Text dimColor>❯ </Text>
+            <Text>{content as string}</Text>
+          </Text>
         </Box>
       ) : role === Role.ASSISTANT ? (
         <Box flexDirection="column" marginBottom={1}>

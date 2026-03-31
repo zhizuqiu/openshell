@@ -12,8 +12,9 @@ export interface BannerProps {
 export function Banner({ showBanner }: BannerProps): React.ReactElement {
   return (
     <Static items={["banner"]} key="brand-banner">
-      {() => (
+      {(item) => (
         <Box
+          key={item}
           marginBottom={1}
           flexDirection="column"
           alignItems="center"

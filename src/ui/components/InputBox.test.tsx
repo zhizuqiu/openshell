@@ -28,10 +28,10 @@ describe("InputBox", () => {
         cursorPosition={0}
       />,
     );
-    expect(lastFrame()).toContain("Type message");
+    expect(lastFrame()).toContain("❯");
   });
 
-  it("should render custom placeholder", () => {
+  it("should not render custom placeholder inside input box", () => {
     const { lastFrame } = render(
       <InputBox
         mode="agent"
@@ -41,7 +41,7 @@ describe("InputBox", () => {
         placeholder="Custom placeholder"
       />,
     );
-    expect(lastFrame()).toContain("Custom placeholder");
+    expect(lastFrame()).not.toContain("Custom placeholder");
   });
 
   it("should render input value", () => {
@@ -65,7 +65,7 @@ describe("InputBox", () => {
         cursorPosition={0}
       />,
     );
-    expect(lastFrame()).toContain(">");
+    expect(lastFrame()).toContain("❯");
   });
 
   it("should render shell mode prompt", () => {
