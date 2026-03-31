@@ -10,6 +10,7 @@ vi.mock("ink-spinner", () => ({
 
 vi.mock("../themes/index.js", () => ({
   getThemeColors: () => ({
+    terminalBackground: "#000000",
     inputBackground: "#5F5F5F",
     inputBorder: "#4a4a4a",
     promptAgent: "#87AFFF",
@@ -28,7 +29,7 @@ describe("InputBox", () => {
         cursorPosition={0}
       />,
     );
-    expect(lastFrame()).toContain("❯");
+    expect(lastFrame()).toContain(">");
   });
 
   it("should not render custom placeholder inside input box", () => {
@@ -65,7 +66,20 @@ describe("InputBox", () => {
         cursorPosition={0}
       />,
     );
-    expect(lastFrame()).toContain("❯");
+    expect(lastFrame()).toContain(">");
+  });
+
+  it("should render gray box borders around the input", () => {
+    const { lastFrame } = render(
+      <InputBox
+        mode="agent"
+        isProcessing={false}
+        inputValue=""
+        cursorPosition={0}
+      />,
+    );
+    expect(lastFrame()).toContain("▀");
+    expect(lastFrame()).toContain("▄");
   });
 
   it("should render shell mode prompt", () => {

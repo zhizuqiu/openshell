@@ -18,7 +18,6 @@ export function InputBox({
   cursorPosition,
   placeholder = "Type message, ! for shell, / for commands",
 }: InputBoxProps): React.ReactElement {
-  void placeholder;
   const colors = getThemeColors();
 
   const promptColor = isProcessing
@@ -27,30 +26,52 @@ export function InputBox({
       ? colors.promptShell
       : colors.promptAgent;
 
-  const prompt = mode === "shell" ? "! " : "❯ ";
+  const prompt = mode === "shell" ? "! " : "> ";
+
+  const termWidth = (process.stdout.columns || 80) - 2;
 
   return (
-    <Box flexDirection="column" width="100%">
+    <Box
+      flexDirection="column"
+      backgroundColor={colors.inputBackground}
+      width="100%"
+    >
+      <Box width="100%" backgroundColor={colors.inputBackground}>
+        <Text
+          color={colors.terminalBackground}
+          backgroundColor={colors.inputBackground}
+        >
+          {"▀".repeat(Math.max(1, termWidth))}
+        </Text>
+      </Box>
       <Box
         flexDirection="row"
+        paddingX={1}
         alignItems="flex-start"
-        justifyContent="flex-start"
-        borderColor={colors.inputBorder}
-        borderStyle="round"
-        borderLeft={false}
-        borderRight={false}
-        borderBottom={true}
-        width="100%"
+        backgroundColor={colors.inputBackground}
       >
-        <Text color={promptColor}>{prompt}</Text>
-        <Box flexGrow={1} flexShrink={1}>
+        <Text color={promptColor} bold backgroundColor={colors.inputBackground}>
+          {prompt}
+        </Text>
+        <Box
+          flexGrow={1}
+          flexShrink={1}
+          backgroundColor={colors.inputBackground}
+        >
           {isProcessing ? (
             inputValue ? (
-              <Text dimColor wrap="wrap">
+              <Text
+                dimColor
+                wrap="wrap"
+                backgroundColor={colors.inputBackground}
+              >
                 {inputValue}
               </Text>
             ) : (
-              <Box flexDirection="row">
+              <Box
+                flexDirection="row"
+                backgroundColor={colors.inputBackground}
+              >
                 <Text color="yellow">
                   <Spinner type="dots" />
                 </Text>
@@ -58,13 +79,27 @@ export function InputBox({
               </Box>
             )
           ) : (
-            <Text wrap="wrap">
-              <Text>{inputValue.slice(0, cursorPosition)}</Text>
-              <Text inverse>{inputValue[cursorPosition] || " "}</Text>
-              <Text>{inputValue.slice(cursorPosition + 1)}</Text>
+            <Text wrap="wrap" backgroundColor={colors.inputBackground}>
+              <Text backgroundColor={colors.inputBackground}>
+                {inputValue.slice(0, cursorPosition)}
+              </Text>
+              <Text inverse backgroundColor={colors.inputBackground}>
+                {inputValue[cursorPosition] || " "}
+              </Text>
+              <Text backgroundColor={colors.inputBackground}>
+                {inputValue.slice(cursorPosition + 1)}
+              </Text>
             </Text>
           )}
         </Box>
+      </Box>
+      <Box width="100%" backgroundColor={colors.inputBackground}>
+        <Text
+          color={colors.terminalBackground}
+          backgroundColor={colors.inputBackground}
+        >
+          {"▄".repeat(Math.max(1, termWidth))}
+        </Text>
       </Box>
     </Box>
   );
