@@ -16,6 +16,10 @@ Interact with your system using natural language. No more memorizing complex com
 - ⌨️ **Input Stability**: Custom keyboard parser ensures no character loss, even during high-frequency streaming.
 - 🔍 **Dynamic Command Execution**: Supports cross-platform commands (bash/zsh on Unix, PowerShell/cmd on Windows).
 
+## 🗺️ Roadmap
+
+- Manual context compaction via `/compact` command for long-running sessions.
+
 ## 📸 Demo
 
 [![asciicast](https://asciinema.org/a/7tbFGLf4FiJQMRJ4.svg)](https://asciinema.org/a/7tbFGLf4FiJQMRJ4)
