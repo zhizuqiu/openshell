@@ -68,7 +68,7 @@ OpenShell supports two configuration methods: **Environment Variables** and **Co
 | :----------------------- | :------- | :------------------------------------------- | :-------------------------- |
 | `OPENAI_API_KEY`         | **Yes**  | AI model API Key                             | -                           |
 | `OPENAI_API_MODEL`       | No       | Model name (e.g., qwen-max, gpt-4o)          | `gpt-4o`                    |
-| `OPENAI_BASE_URL`        | No       | Custom provider endpoint                     | `https://api.openai.com/v1` |
+| `OPENAI_BASE_URL`        | **Yes**  | OpenAI-compatible API endpoint               | -                           |
 | `OPENSHELL_LANG`         | No       | UI language (`zh-CN` or `en-US`)             | `en-US`                     |
 | `OPENSHELL_DEBUG`        | No       | Enable debug mode (`true` or `false`)        | `false`                     |
 | `OPENSHELL_AUTO_EXECUTE` | No       | Enable auto-execute mode (`true` or `false`) | `false`                     |
@@ -101,7 +101,7 @@ OPENAI_API_KEY=your-api-key-here
 # Optional: Model name (default: gpt-4o)
 OPENAI_API_MODEL=gpt-4o
 
-# Optional: Custom API endpoint
+# Required: OpenAI-compatible API endpoint
 OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Optional: UI language (zh-CN or en-US, default: en-US)

@@ -68,7 +68,7 @@ OpenShell 支持两种配置方式：**环境变量**和**配置文件**。
 | :----------------------- | :----- | :----------------------------------- | :-------------------------- |
 | `OPENAI_API_KEY`         | **是** | AI 模型 API Key                      | -                           |
 | `OPENAI_API_MODEL`       | 否     | 模型名称 (如 qwen-max, gpt-4o)       | `gpt-4o`                    |
-| `OPENAI_BASE_URL`        | 否     | 自定义提供商接口地址                 | `https://api.openai.com/v1` |
+| `OPENAI_BASE_URL`        | **是** | OpenAI 兼容 API 接口地址             | -                           |
 | `OPENSHELL_LANG`         | 否     | UI 语言 (`zh-CN` 或 `en-US`)         | `en-US`                     |
 | `OPENSHELL_DEBUG`        | 否     | 启用调试模式 (`true` 或 `false`)     | `false`                     |
 | `OPENSHELL_AUTO_EXECUTE` | 否     | 启用自主执行模式 (`true` 或 `false`) | `false`                     |
@@ -101,7 +101,7 @@ OPENAI_API_KEY=your-api-key-here
 # 可选：模型名称（默认：gpt-4o）
 OPENAI_API_MODEL=gpt-4o
 
-# 可选：自定义 API 接口地址
+# 必需：OpenAI 兼容 API 接口地址
 OPENAI_BASE_URL=https://api.openai.com/v1
 
 # 可选：UI 语言（zh-CN 或 en-US，默认：en-US）
